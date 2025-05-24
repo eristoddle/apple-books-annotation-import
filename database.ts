@@ -3,8 +3,11 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 import * as glob from 'glob';
+import { exec } from 'child_process';
+import { promisify } from 'util';
 import { BookDetail, Annotation } from './types';
-import initSqlJs from 'sql.js';
+
+const execAsync = promisify(exec);
 
 const ANNOTATION_DB_PATTERN = path.join(
 	os.homedir(),
@@ -17,36 +20,6 @@ const LIBRARY_DB_PATTERN = path.join(
 );
 
 export class AppleBooksDatabase {
-	private static SQL: any = null;
-	
-	private static async initSql() {
-		if (!this.SQL) {
-			try {
-				// Try to read the WASM file and pass it directly to avoid path issues
-				const wasmPath = path.join(__dirname, 'sql-wasm.wasm');
-				let wasmBinary: Uint8Array | undefined;
-				
-				try {
-					wasmBinary = fs.readFileSync(wasmPath);
-				} catch (error) {
-					console.log('WASM file not found, falling back to JS-only mode');
-				}
-
-				this.SQL = await initSqlJs({
-					wasmBinary: wasmBinary,
-					locateFile: (file: string) => {
-						console.log('locateFile called for:', file);
-						return file;
-					}
-				});
-			} catch (error) {
-				console.error('Failed to initialize sql.js:', error);
-				throw new Error(`Failed to initialize SQLite: ${error}`);
-			}
-		}
-		return this.SQL;
-	}
-
 	private static getDbPath(pattern: string): string {
 		const paths = glob.sync(pattern);
 		if (paths.length === 0) {
@@ -55,10 +28,70 @@ export class AppleBooksDatabase {
 		return paths[0];
 	}
 
-	private static async openDatabase(dbPath: string) {
-		const SQL = await this.initSql();
-		const fileBuffer = fs.readFileSync(dbPath);
-		return new SQL.Database(fileBuffer);
+	private static async executeSqlQuery(dbPath: string, query: string): Promise<any[]> {
+		try {
+			// Use the sqlite3 command-line tool which is available on macOS
+			const command = `sqlite3 "${dbPath}" "${query.replace(/"/g, '""')}"`;
+			console.log('Executing SQLite command:', command);
+			
+			const { stdout, stderr } = await execAsync(command);
+			
+			if (stderr) {
+				console.warn('SQLite stderr:', stderr);
+			}
+			
+			if (!stdout.trim()) {
+				return [];
+			}
+
+			// Parse the output - sqlite3 outputs pipe-separated values by default
+			const lines = stdout.trim().split('\n');
+			return lines.map(line => {
+				const values = line.split('|');
+				return values;
+			});
+		} catch (error: any) {
+			console.error('SQLite execution error:', error);
+			throw new Error(`SQLite query failed: ${error.message}`);
+		}
+	}
+
+	private static async executeSqlQueryWithHeaders(dbPath: string, query: string): Promise<any[]> {
+		try {
+			// Use -header mode to get column names
+			const command = `sqlite3 -header "${dbPath}" "${query.replace(/"/g, '""')}"`;
+			console.log('Executing SQLite command with headers:', command);
+			
+			const { stdout, stderr } = await execAsync(command);
+			
+			if (stderr) {
+				console.warn('SQLite stderr:', stderr);
+			}
+			
+			if (!stdout.trim()) {
+				return [];
+			}
+
+			const lines = stdout.trim().split('\n');
+			if (lines.length < 2) {
+				return [];
+			}
+
+			const headers = lines[0].split('|');
+			const rows = lines.slice(1);
+
+			return rows.map(line => {
+				const values = line.split('|');
+				const row: any = {};
+				headers.forEach((header, index) => {
+					row[header] = values[index] || null;
+				});
+				return row;
+			});
+		} catch (error: any) {
+			console.error('SQLite execution error:', error);
+			throw new Error(`SQLite query failed: ${error.message}`);
+		}
 	}
 
 	static checkDatabaseAccess(): { canAccess: boolean; error?: string } {
@@ -102,23 +135,9 @@ export class AppleBooksDatabase {
 		try {
 			const dbPath = this.getDbPath(LIBRARY_DB_PATTERN);
 			console.log('Opening library database:', dbPath);
-			const db = await this.openDatabase(dbPath);
 
-			const query = `
-				SELECT ZASSETID, ZSORTTITLE, ZSORTAUTHOR, ZBOOKDESCRIPTION, ZEPUBID, ZPATH
-				FROM ZBKLIBRARYASSET
-			`;
-
-			const stmt = db.prepare(query);
-			const results: any[] = [];
-			
-			while (stmt.step()) {
-				const row = stmt.getAsObject();
-				results.push(row);
-			}
-			
-			stmt.free();
-			db.close();
+			const query = `SELECT ZASSETID, ZSORTTITLE, ZSORTAUTHOR, ZBOOKDESCRIPTION, ZEPUBID, ZPATH FROM ZBKLIBRARYASSET;`;
+			const results = await this.executeSqlQueryWithHeaders(dbPath, query);
 
 			console.log('Library rows found:', results.length);
 			
@@ -148,23 +167,15 @@ export class AppleBooksDatabase {
 			console.log('Getting books with highlights from:', { annotationDbPath, libraryDbPath });
 
 			// Get all book IDs from library first
-			const libraryDb = await this.openDatabase(libraryDbPath);
-			const libraryStmt = libraryDb.prepare('SELECT ZASSETID FROM ZBKLIBRARYASSET');
-			const libraryRows: any[] = [];
-			
-			while (libraryStmt.step()) {
-				libraryRows.push(libraryStmt.getAsObject());
-			}
-			
-			libraryStmt.free();
-			libraryDb.close();
+			const libraryQuery = `SELECT ZASSETID FROM ZBKLIBRARYASSET;`;
+			const libraryRows = await this.executeSqlQueryWithHeaders(libraryDbPath, libraryQuery);
 
 			console.log('Library rows:', libraryRows.length);
 
 			// Filter out any null/undefined asset IDs and ensure they're strings
 			const bookIds = libraryRows
 				.map((row: any) => row?.ZASSETID)
-				.filter((id: any) => id !== null && id !== undefined)
+				.filter((id: any) => id !== null && id !== undefined && id !== '')
 				.map((id: any) => String(id));
 
 			console.log('Valid book IDs:', bookIds.length);
@@ -175,32 +186,22 @@ export class AppleBooksDatabase {
 			}
 
 			// Now get annotations
-			const annotationDb = await this.openDatabase(annotationDbPath);
-			
-			const query = `
+			const annotationQuery = `
 				SELECT DISTINCT ZANNOTATIONASSETID
 				FROM ZAEANNOTATION
 				WHERE ZANNOTATIONASSETID IS NOT NULL
 				AND ZANNOTATIONSELECTEDTEXT IS NOT NULL
-				AND ZANNOTATIONSELECTEDTEXT != ""
+				AND ZANNOTATIONSELECTEDTEXT != "";
 			`;
 
-			const annotationStmt = annotationDb.prepare(query);
-			const annotationRows: any[] = [];
-			
-			while (annotationStmt.step()) {
-				annotationRows.push(annotationStmt.getAsObject());
-			}
-			
-			annotationStmt.free();
-			annotationDb.close();
+			const annotationRows = await this.executeSqlQueryWithHeaders(annotationDbPath, annotationQuery);
 
 			console.log('Annotation rows found:', annotationRows.length);
 
 			// Filter annotations to only include books that exist in our library
 			const booksWithHighlights = annotationRows
 				.map((row: any) => row?.ZANNOTATIONASSETID)
-				.filter((id: any) => id !== null && id !== undefined)
+				.filter((id: any) => id !== null && id !== undefined && id !== '')
 				.map((id: any) => String(id))
 				.filter((id: string) => bookIds.includes(id));
 
@@ -215,30 +216,21 @@ export class AppleBooksDatabase {
 	static async getAnnotationsForBook(assetId: string): Promise<Annotation[]> {
 		try {
 			const dbPath = this.getDbPath(ANNOTATION_DB_PATTERN);
-			const db = await this.openDatabase(dbPath);
 
 			const query = `
 				SELECT ZANNOTATIONSELECTEDTEXT, ZANNOTATIONNOTE, ZANNOTATIONLOCATION, ZPLABSOLUTEPHYSICALLOCATION
 				FROM ZAEANNOTATION
-				WHERE ZANNOTATIONASSETID = ? AND ZANNOTATIONSELECTEDTEXT != ""
-				ORDER BY ZPLABSOLUTEPHYSICALLOCATION
+				WHERE ZANNOTATIONASSETID = '${assetId}' AND ZANNOTATIONSELECTEDTEXT != ''
+				ORDER BY ZPLABSOLUTEPHYSICALLOCATION;
 			`;
 
-			const stmt = db.prepare(query, [assetId]);
-			const results: any[] = [];
-			
-			while (stmt.step()) {
-				results.push(stmt.getAsObject());
-			}
-			
-			stmt.free();
-			db.close();
+			const results = await this.executeSqlQueryWithHeaders(dbPath, query);
 
 			return results.map((row: any) => ({
 				selectedText: row.ZANNOTATIONSELECTEDTEXT || '',
 				note: row.ZANNOTATIONNOTE || null,
 				location: row.ZANNOTATIONLOCATION || null,
-				physicalLocation: row.ZPLABSOLUTEPHYSICALLOCATION || null,
+				physicalLocation: row.ZPLABSOLUTEPHYSICALLOCATION ? parseInt(row.ZPLABSOLUTEPHYSICALLOCATION) : null,
 			}));
 		} catch (error: any) {
 			throw new Error(`Failed to get annotations for book ${assetId}: ${error?.message || 'Unknown error'}`);
