@@ -60,7 +60,9 @@ export default class AppleBooksImporterPlugin extends Plugin {
 
 		try {
 			// Get all books with highlights
+			console.log('Getting books with highlights...');
 			const booksWithHighlights = AppleBooksDatabase.getBooksWithHighlights();
+			console.log('Books with highlights:', booksWithHighlights);
 			
 			if (booksWithHighlights.length === 0) {
 				new Notice('No books with highlights found in Apple Books', 4000);

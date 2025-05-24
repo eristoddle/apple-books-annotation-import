@@ -65,6 +65,7 @@ export class AppleBooksDatabase {
 	static getBookDetails(): BookDetail[] {
 		try {
 			const dbPath = this.getDbPath(LIBRARY_DB_PATTERN);
+			console.log('Opening library database:', dbPath);
 			const db = new Database(dbPath, { readonly: true });
 
 			const query = `
@@ -73,6 +74,7 @@ export class AppleBooksDatabase {
 			`;
 
 			const rows = db.prepare(query).all();
+			console.log('Library rows found:', rows.length);
 			db.close();
 
 			return rows.map((row: any) => ({
@@ -89,6 +91,7 @@ export class AppleBooksDatabase {
 				cover: null,
 			}));
 		} catch (error: any) {
+			console.error('Error in getBookDetails:', error);
 			throw new Error(`Failed to get book details: ${error?.message || 'Unknown error'}`);
 		}
 	}
@@ -97,32 +100,54 @@ export class AppleBooksDatabase {
 		try {
 			const annotationDbPath = this.getDbPath(ANNOTATION_DB_PATTERN);
 			const libraryDbPath = this.getDbPath(LIBRARY_DB_PATTERN);
+			console.log('Getting books with highlights from:', { annotationDbPath, libraryDbPath });
 
 			// Get all book IDs from library
 			const libraryDb = new Database(libraryDbPath, { readonly: true });
-			const bookIds = libraryDb.prepare('SELECT ZASSETID FROM ZBKLIBRARYASSET').all()
-				.map((row: any) => row.ZASSETID);
+			const libraryRows = libraryDb.prepare('SELECT ZASSETID FROM ZBKLIBRARYASSET').all();
 			libraryDb.close();
+			console.log('Library rows:', libraryRows.length);
+
+			// Filter out any null/undefined asset IDs and ensure they're strings
+			const bookIds = libraryRows
+				.map((row: any) => row?.ZASSETID)
+				.filter((id: any) => id !== null && id !== undefined)
+				.map((id: any) => String(id));
+
+			console.log('Valid book IDs:', bookIds.length);
 
 			if (bookIds.length === 0) {
+				console.log('No book IDs found');
 				return [];
 			}
 
 			// Find books with highlights
 			const annotationDb = new Database(annotationDbPath, { readonly: true });
-			const placeholders = bookIds.map(() => '?').join(',');
+			
+			// Use a simpler approach to avoid potential issues with large parameter lists
 			const query = `
 				SELECT DISTINCT ZANNOTATIONASSETID
 				FROM ZAEANNOTATION
-				WHERE ZANNOTATIONASSETID IN (${placeholders})
+				WHERE ZANNOTATIONASSETID IS NOT NULL
+				AND ZANNOTATIONSELECTEDTEXT IS NOT NULL
 				AND ZANNOTATIONSELECTEDTEXT != ""
 			`;
 
-			const rows = annotationDb.prepare(query).all(...bookIds);
+			const annotationRows = annotationDb.prepare(query).all();
 			annotationDb.close();
+			console.log('Annotation rows found:', annotationRows.length);
 
-			return rows.map((row: any) => row.ZANNOTATIONASSETID);
+			// Filter annotations to only include books that exist in our library
+			const booksWithHighlights = annotationRows
+				.map((row: any) => row?.ZANNOTATIONASSETID)
+				.filter((id: any) => id !== null && id !== undefined)
+				.map((id: any) => String(id))
+				.filter((id: string) => bookIds.includes(id));
+
+			console.log('Books with highlights:', booksWithHighlights.length);
+			return [...new Set(booksWithHighlights)]; // Remove duplicates
 		} catch (error: any) {
+			console.error('Error in getBooksWithHighlights:', error);
 			throw new Error(`Failed to get books with highlights: ${error?.message || 'Unknown error'}`);
 		}
 	}
