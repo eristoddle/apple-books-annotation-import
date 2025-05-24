@@ -29,84 +29,67 @@ export class AppleBooksDatabase {
 	}
 
 	static async getEpubMetadata(epubPath: string): Promise<any> {
-		try {
-			if (!epubPath) {
-				console.log('No EPUB path provided');
-				return null;
-			}
-
-			// Try multiple possible EPUB file locations
-			const possiblePaths = [
-				epubPath, // Original path from database
-				epubPath.replace('/com.apple.BKAgentService/', '/com.apple.iBooksX/'), // Different container
-				epubPath.replace('/iBooks/Books/', '/AEAnnotation/'), // Different folder
-				epubPath.replace('.epub', '') + '.epub', // Ensure .epub extension
-			];
-
-			let actualPath = null;
-			for (const testPath of possiblePaths) {
-				if (fs.existsSync(testPath)) {
-					actualPath = testPath;
-					console.log('Found EPUB file at:', actualPath);
-					break;
-				}
-			}
-
-			if (!actualPath) {
-				console.log('EPUB file not found at any location. Tried:', possiblePaths);
-				return null;
-			}
-
-			const epub2 = require('epub2');
-			console.log('Extracting EPUB metadata from:', actualPath);
-			
-			// Try different import patterns for epub2
-			let epub: any;
-			if (typeof epub2 === 'function') {
-				epub = new epub2(actualPath);
-			} else if (epub2.default && typeof epub2.default === 'function') {
-				epub = new epub2.default(actualPath);
-			} else if (epub2.EPub && typeof epub2.EPub === 'function') {
-				epub = new epub2.EPub(actualPath);
-			} else {
-				throw new Error('Could not find EPub constructor in epub2 module');
-			}
-			await new Promise((resolve, reject) => {
-				epub.parse((error: any) => {
-					if (error) reject(error);
-					else resolve(void 0);
-				});
-			});
-
-			// Extract metadata similar to Python ebooklib
-			let cover = null;
-			try {
-				const coverImage = epub.getCoverImage();
-				if (coverImage) {
-					cover = coverImage.toString('base64');
-				}
-			} catch (coverError) {
-				console.log('Could not extract cover image:', coverError.message);
-			}
-
-			const metadata = {
-				isbn: epub.metadata?.ISBN || epub.metadata?.identifier || null,
-				language: epub.metadata?.language || null,
-				publisher: epub.metadata?.publisher || null,
-				publicationDate: epub.metadata?.date || null,
-				cover: cover
-			};
-
-			console.log('Extracted EPUB metadata:', {
-				...metadata,
-				cover: cover ? `${cover.length} chars base64` : null
-			});
-
-			return metadata;
-		} catch (error: any) {
-			console.log('EPUB metadata extraction failed:', error.message);
-			return null; // Graceful fallback - won't break existing functionality
+		console.log('EPUB metadata extraction attempt for path:', epubPath);
+		
+		if (!epubPath) {
+			console.log('No EPUB path provided');
+			return null;
 		}
+
+		// First, let's do exactly what the Python script does - just try the path directly
+		try {
+			console.log('Checking if file exists at original path:', epubPath);
+			const stats = fs.statSync(epubPath);
+			console.log('File exists! Size:', stats.size, 'bytes');
+			
+			// If we can stat it, try to read it
+			const buffer = fs.readFileSync(epubPath);
+			console.log('Successfully read file, size:', buffer.length, 'bytes');
+			
+			return {
+				isbn: null,
+				language: null,
+				publisher: null,
+				publicationDate: null,
+				cover: null,
+				fileSize: buffer.length,
+				filePath: epubPath
+			};
+			
+		} catch (directError) {
+			console.log('Direct path failed:', directError.message);
+		}
+
+		// Let's also try to explore what's actually in the containers directory
+		try {
+			const containersDir = path.join(os.homedir(), 'Library/Containers');
+			console.log('Exploring containers directory:', containersDir);
+			
+			const containers = fs.readdirSync(containersDir).filter(name => 
+				name.includes('apple') && name.toLowerCase().includes('book')
+			);
+			console.log('Found book-related containers:', containers);
+			
+			for (const container of containers) {
+				const containerPath = path.join(containersDir, container);
+				try {
+					const documentsPath = path.join(containerPath, 'Data/Documents');
+					if (fs.existsSync(documentsPath)) {
+						console.log('Documents path exists:', documentsPath);
+						// Look for iBooks or Books directory
+						const documentsContents = fs.readdirSync(documentsPath);
+						console.log('Documents contents:', documentsContents);
+					}
+				} catch (containerError) {
+					console.log('Error exploring container:', container, containerError.message);
+				}
+			}
+		} catch (exploreError) {
+			console.log('Error exploring containers:', exploreError.message);
+		}
+
+		console.log('EPUB file not accessible, continuing without metadata');
+		return null;
 	}
 
 	private static async executeSqlQuery(dbPath: string, query: string): Promise<any[]> {
