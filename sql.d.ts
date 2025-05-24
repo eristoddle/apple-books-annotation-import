@@ -14,6 +14,11 @@ declare module 'sql.js' {
 		Database: new (data?: Uint8Array) => Database;
 	}
 	
-	function initSqlJs(): Promise<SqlJsStatic>;
+	interface SqlJsConfig {
+		locateFile?: (file: string) => string;
+		wasmBinary?: Uint8Array;
+	}
+	
+	function initSqlJs(config?: SqlJsConfig): Promise<SqlJsStatic>;
 	export = initSqlJs;
 }

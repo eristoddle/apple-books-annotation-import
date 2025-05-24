@@ -4,8 +4,8 @@
 	"description": "Import highlights and notes from Apple Books app into Obsidian",
 	"main": "main.js",
 	"scripts": {
-		"dev": "node esbuild.config.mjs",
-		"build": "tsc -noEmit -skipLibCheck && node esbuild.config.mjs production",
+		"dev": "cp node_modules/sql.js/dist/sql-wasm.wasm . && node esbuild.config.mjs",
+		"build": "cp node_modules/sql.js/dist/sql-wasm.wasm . && tsc -noEmit -skipLibCheck && node esbuild.config.mjs production",
 		"version": "node version-bump.mjs && git add manifest.json versions.json"
 	},
 	"keywords": [

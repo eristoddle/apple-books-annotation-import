@@ -21,7 +21,28 @@ export class AppleBooksDatabase {
 	
 	private static async initSql() {
 		if (!this.SQL) {
-			this.SQL = await initSqlJs();
+			try {
+				// Try to read the WASM file and pass it directly to avoid path issues
+				const wasmPath = path.join(__dirname, 'sql-wasm.wasm');
+				let wasmBinary: Uint8Array | undefined;
+				
+				try {
+					wasmBinary = fs.readFileSync(wasmPath);
+				} catch (error) {
+					console.log('WASM file not found, falling back to JS-only mode');
+				}
+
+				this.SQL = await initSqlJs({
+					wasmBinary: wasmBinary,
+					locateFile: (file: string) => {
+						console.log('locateFile called for:', file);
+						return file;
+					}
+				});
+			} catch (error) {
+				console.error('Failed to initialize sql.js:', error);
+				throw new Error(`Failed to initialize SQLite: ${error}`);
+			}
 		}
 		return this.SQL;
 	}
