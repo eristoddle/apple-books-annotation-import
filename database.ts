@@ -58,8 +58,11 @@ export class AppleBooksDatabase {
 
 	private static async executeSqlQueryWithHeaders(dbPath: string, query: string): Promise<any[]> {
 		try {
+			// Clean up the query - remove extra whitespace and newlines
+			const cleanQuery = query.replace(/\s+/g, ' ').trim();
+			
 			// Use -header mode to get column names
-			const command = `sqlite3 -header "${dbPath}" "${query.replace(/"/g, '""')}"`;
+			const command = `sqlite3 -header "${dbPath}" "${cleanQuery.replace(/"/g, '""')}"`;
 			console.log('Executing SQLite command with headers:', command);
 			
 			const { stdout, stderr } = await execAsync(command);
@@ -186,13 +189,7 @@ export class AppleBooksDatabase {
 			}
 
 			// Now get annotations
-			const annotationQuery = `
-				SELECT DISTINCT ZANNOTATIONASSETID
-				FROM ZAEANNOTATION
-				WHERE ZANNOTATIONASSETID IS NOT NULL
-				AND ZANNOTATIONSELECTEDTEXT IS NOT NULL
-				AND ZANNOTATIONSELECTEDTEXT != "";
-			`;
+			const annotationQuery = `SELECT DISTINCT ZANNOTATIONASSETID FROM ZAEANNOTATION WHERE ZANNOTATIONASSETID IS NOT NULL AND ZANNOTATIONSELECTEDTEXT IS NOT NULL AND ZANNOTATIONSELECTEDTEXT != '';`;
 
 			const annotationRows = await this.executeSqlQueryWithHeaders(annotationDbPath, annotationQuery);
 
@@ -217,12 +214,7 @@ export class AppleBooksDatabase {
 		try {
 			const dbPath = this.getDbPath(ANNOTATION_DB_PATTERN);
 
-			const query = `
-				SELECT ZANNOTATIONSELECTEDTEXT, ZANNOTATIONNOTE, ZANNOTATIONLOCATION, ZPLABSOLUTEPHYSICALLOCATION
-				FROM ZAEANNOTATION
-				WHERE ZANNOTATIONASSETID = '${assetId}' AND ZANNOTATIONSELECTEDTEXT != ''
-				ORDER BY ZPLABSOLUTEPHYSICALLOCATION;
-			`;
+			const query = `SELECT ZANNOTATIONSELECTEDTEXT, ZANNOTATIONNOTE, ZANNOTATIONLOCATION, ZPLABSOLUTEPHYSICALLOCATION FROM ZAEANNOTATION WHERE ZANNOTATIONASSETID = '${assetId}' AND ZANNOTATIONSELECTEDTEXT != '' ORDER BY ZPLABSOLUTEPHYSICALLOCATION;`;
 
 			const results = await this.executeSqlQueryWithHeaders(dbPath, query);
 
