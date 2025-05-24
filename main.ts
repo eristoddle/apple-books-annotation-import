@@ -98,9 +98,31 @@ export default class AppleBooksImporterPlugin extends Plugin {
 						annotations = AppleBooksDatabase.sortAnnotationsByCFI(annotations);
 					}
 
+					// Extract additional metadata from EPUB if available
+					let enrichedBook = book;
+					if (book.path && this.settings.includeCovers) {
+						try {
+							const epubMetadata = await AppleBooksDatabase.getEpubMetadata(book.path);
+							if (epubMetadata) {
+								// Merge EPUB metadata with existing book data
+								enrichedBook = {
+									...book,
+									isbn: epubMetadata.isbn || book.isbn,
+									language: epubMetadata.language || book.language,
+									publisher: epubMetadata.publisher || book.publisher,
+									publicationDate: epubMetadata.publicationDate || book.publicationDate,
+									cover: epubMetadata.cover || book.cover
+								};
+								console.log(`Enhanced metadata for: ${book.title}`);
+							}
+						} catch (epubError) {
+							console.log(`EPUB processing failed for ${book.title}, continuing with basic metadata`);
+						}
+					}
+
 					// Generate markdown content
 					const markdownContent = MarkdownGenerator.generateMarkdown(
-						book, 
+						enrichedBook, 
 						annotations, 
 						this.settings
 					);
