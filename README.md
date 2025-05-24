@@ -20,27 +20,36 @@ This plugin imports highlights and notes from the Apple Books app directly into 
 
 ## Installation & Setup
 
-### 1. Install Dependencies
+### Method 1: Manual Installation (Recommended)
 
-Open Terminal and navigate to the plugin directory:
+1. **Download the latest release** from the [releases page](https://github.com/stmiller/obsidian-apple-books-import/releases)
+2. **Extract the files** to your vault's `.obsidian/plugins/apple-books-annotation-import/` directory
+3. **Restart Obsidian** and enable the plugin in Settings → Community Plugins
 
-```bash
-cd "/Users/stmiller/Library/CloudStorage/Dropbox/Apps/remotely-save/Test/.obsidian/plugins/apple-books-annotation-import"
-npm install
-```
+### Method 2: Build from Source
 
-### 2. Build the Plugin
+1. **Clone this repository** into your vault's plugins directory:
+   ```bash
+   cd /path/to/your/vault/.obsidian/plugins/
+   git clone https://github.com/stmiller/obsidian-apple-books-import.git apple-books-annotation-import
+   cd apple-books-annotation-import
+   ```
 
-```bash
-npm run build
-```
+2. **Install dependencies:**
+   ```bash
+   npm install
+   ```
 
-### 3. Enable in Obsidian
+3. **Build the plugin:**
+   ```bash
+   npm run build
+   ```
 
-1. Restart Obsidian
-2. Go to Settings → Community Plugins
-3. Make sure "Safe mode" is disabled
-4. Find "Apple Books Annotation Import" and enable it
+4. **Enable in Obsidian:**
+   - Restart Obsidian
+   - Go to Settings → Community Plugins
+   - Make sure "Safe mode" is disabled
+   - Find "Apple Books Annotation Import" and enable it
 
 ## Usage
 
