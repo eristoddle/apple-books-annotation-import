@@ -11,6 +11,20 @@ export interface BookDetail {
 	publisher: string | null;
 	publicationDate: string | null;
 	cover: string | null;
+	// Additional fields from database
+	genre: string | null;
+	genres: string | null; // BLOB field for multiple genres
+	year: string | null;
+	pageCount: number | null;
+	rating: number | null;
+	comments: string | null;
+	readingProgress: number | null;
+	creationDate: Date | null;
+	lastOpenDate: Date | null;
+	modificationDate: Date | null;
+	// Enhanced metadata
+	rights: string | null;
+	subjects: string[] | null;
 }
 
 export interface Annotation {
@@ -18,6 +32,14 @@ export interface Annotation {
 	note: string | null;
 	location: string | null;
 	physicalLocation: number | null;
+	// Additional fields from database
+	annotationType: number | null;
+	annotationStyle: number | null;
+	isUnderline: boolean;
+	creationDate: Date | null;
+	modificationDate: Date | null;
+	uuid: string | null;
+	representativeText: string | null;
 }
 
 export interface BookWithAnnotations {
@@ -34,4 +56,7 @@ export interface AppleBooksImporterSettings {
 	customTags: string;
 	includeChapterInfo: boolean;
 	sortAnnotations: boolean;
+	includeAnnotationDates: boolean;
+	includeAnnotationStyles: boolean;
+	includeReadingProgress: boolean;
 }

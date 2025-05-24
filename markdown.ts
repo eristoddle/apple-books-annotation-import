@@ -34,21 +34,25 @@ export class MarkdownGenerator {
 
 		try {
 			// Extract content in brackets from CFI
+			// Examples: 'epubcfi(/6/12[chapter_4]!/4/10/1,:0,:4)' -> 'Chapter 4'
+			// 'epubcfi(/6/24[c3.xhtml]!/4/188/2/1,:0,:1)' -> 'Chapter 3'
 			const bracketMatch = cfi.match(/\[([^\]]+)\]/);
 			if (!bracketMatch) return null;
 
 			const chapterId = bracketMatch[1];
-			console.log('Extracted chapter ID:', chapterId);
 
-			// Handle different chapter naming patterns
+			// Handle different chapter naming patterns (based on Python script logic)
 			if (chapterId.toLowerCase().includes('chapter_')) {
+				// Extract number from 'chapter_4' -> 'Chapter 4'
 				const chapterMatch = chapterId.match(/chapter_(\d+)/i);
 				if (chapterMatch) {
 					return `Chapter ${chapterMatch[1]}`;
 				}
 			}
 
-			if (chapterId.toLowerCase().match(/^c\d+/)) {
+			if (chapterId.toLowerCase().startsWith('c') && 
+				/^c\d+/.test(chapterId.toLowerCase())) {
+				// Handle 'c3.xhtml' -> 'Chapter 3'
 				const chapterMatch = chapterId.match(/^c(\d+)/i);
 				if (chapterMatch) {
 					return `Chapter ${chapterMatch[1]}`;
@@ -75,18 +79,18 @@ export class MarkdownGenerator {
 
 			if (chapterId.toLowerCase().includes('text')) {
 				// Handle generic text sections - try to make them readable
-				if (chapterId.toLowerCase().includes('text-2') || chapterId.toLowerCase().includes('text 2')) {
+				if (chapterId.toLowerCase().includes('text-2')) {
 					return 'Preface';
-				} else if (chapterId.toLowerCase().includes('text-3') || chapterId.toLowerCase().includes('text 3')) {
+				} else if (chapterId.toLowerCase().includes('text-3')) {
 					return 'Preface (continued)';
-				} else if (chapterId.toLowerCase().includes('text-5') || chapterId.toLowerCase().includes('text 5')) {
+				} else if (chapterId.toLowerCase().includes('text-5')) {
 					return 'How to Begin';
 				} else {
 					return 'Text Section';
 				}
 			}
 
-			// Clean up the raw chapter ID as fallback
+			// Fallback: clean up the raw chapter ID
 			const cleaned = chapterId.replace(/[_-]/g, ' ');
 			return cleaned.charAt(0).toUpperCase() + cleaned.slice(1).toLowerCase();
 		} catch (error) {
@@ -156,6 +160,30 @@ export class MarkdownGenerator {
 			if (book.publicationDate) {
 				content += `publication_date: ${book.publicationDate}\n`;
 			}
+			if (book.year) {
+				content += `year: ${book.year}\n`;
+			}
+			if (book.genre) {
+				content += `genre: ${this.sanitizeFrontmatter(book.genre)}\n`;
+			}
+			if (book.pageCount) {
+				content += `page_count: ${book.pageCount}\n`;
+			}
+			if (book.rating && book.rating > 0) {
+				content += `rating: ${book.rating}\n`;
+			}
+			if (book.readingProgress !== null && book.readingProgress > 0 && settings.includeReadingProgress) {
+				content += `reading_progress: ${Math.round(book.readingProgress * 100)}%\n`;
+			}
+			if (book.subjects && book.subjects.length > 0) {
+				content += `subjects: [${book.subjects.map(s => `"${this.sanitizeFrontmatter(s)}"`).join(', ')}]\n`;
+			}
+			if (book.rights) {
+				content += `rights: ${this.sanitizeFrontmatter(book.rights)}\n`;
+			}
+			if (book.lastOpenDate) {
+				content += `last_opened: ${book.lastOpenDate.toISOString().split('T')[0]}\n`;
+			}
 		}
 
 		// Add tags if enabled
@@ -201,6 +229,23 @@ export class MarkdownGenerator {
 			if (book.language) content += `- **Language:** ${book.language}\n`;
 			if (book.publisher) content += `- **Publisher:** ${book.publisher}\n`;
 			if (book.publicationDate) content += `- **Publication Date:** ${book.publicationDate}\n`;
+			if (book.year && book.year !== book.publicationDate) content += `- **Year:** ${book.year}\n`;
+			if (book.genre) content += `- **Genre:** ${book.genre}\n`;
+			if (book.pageCount) content += `- **Pages:** ${book.pageCount}\n`;
+			if (book.rating && book.rating > 0) content += `- **Rating:** ${book.rating}/5 ⭐\n`;
+			if (book.readingProgress !== null && book.readingProgress > 0) {
+				content += `- **Reading Progress:** ${Math.round(book.readingProgress * 100)}%\n`;
+			}
+			if (book.subjects && book.subjects.length > 0) {
+				content += `- **Subjects:** ${book.subjects.join(', ')}\n`;
+			}
+			if (book.rights) content += `- **Rights:** ${book.rights}\n`;
+			if (book.lastOpenDate) {
+				content += `- **Last Opened:** ${book.lastOpenDate.toDateString()}\n`;
+			}
+			if (book.comments) {
+				content += `- **Comments:** ${book.comments}\n`;
+			}
 		}
 
 		if (settings.addTags && settings.customTags) {
@@ -212,7 +257,24 @@ export class MarkdownGenerator {
 		// Process annotations
 		let currentChapter: string | null = null;
 		
-		for (const annotation of annotations) {
+		// Filter annotations one more time to ensure no empty ones slip through
+		const validAnnotations = annotations.filter(annotation => {
+			const trimmedText = annotation.selectedText.trim();
+			return trimmedText.length > 0;
+		});
+		
+		if (validAnnotations.length === 0) {
+			content += 'No annotations found for this book.\n\n';
+			return content;
+		}
+		
+		for (const annotation of validAnnotations) {
+			// Skip if somehow we still have empty text
+			const trimmedText = annotation.selectedText.trim();
+			if (trimmedText.length === 0) {
+				continue;
+			}
+			
 			// Add chapter heading if enabled and we have a new chapter
 			if (settings.includeChapterInfo && annotation.location) {
 				const chapter = this.extractChapterFromCFI(annotation.location);
@@ -222,20 +284,51 @@ export class MarkdownGenerator {
 				}
 			}
 
-			// Add the highlight as a blockquote
-			const highlightLines = annotation.selectedText.split('\n');
-			for (const line of highlightLines) {
-				content += `> ${line}\n`;
+			// Add annotation style indicator if available and enabled
+			let styleIndicator = '';
+			if (settings.includeAnnotationStyles) {
+				if (annotation.annotationStyle !== null) {
+					switch (annotation.annotationStyle) {
+						case 0: styleIndicator = '🟡 '; break; // Yellow highlight
+						case 1: styleIndicator = '🟢 '; break; // Green highlight
+						case 2: styleIndicator = '🔵 '; break; // Blue highlight
+						case 3: styleIndicator = '🟣 '; break; // Purple highlight
+						case 4: styleIndicator = '🔴 '; break; // Red highlight
+						default: styleIndicator = ''; break;
+					}
+				}
+				if (annotation.isUnderline) {
+					styleIndicator += '📝 '; // Underline indicator
+				}
+			}
+
+			// Add the highlight as a blockquote with style indicator
+			const highlightLines = trimmedText.split('\n').map(line => line.trim()).filter(line => line.length > 0);
+			
+			if (highlightLines.length === 0) {
+				continue; // Skip if no valid lines
+			}
+			
+			for (let i = 0; i < highlightLines.length; i++) {
+				if (i === 0) {
+					content += `> ${styleIndicator}${highlightLines[i]}\n`;
+				} else {
+					content += `> ${highlightLines[i]}\n`;
+				}
 			}
 			content += '\n';
 
-			// Add citation
+			// Add citation with creation date if available
 			const citation = this.formatCitation(book, annotation.physicalLocation);
-			content += `*${citation}*\n\n`;
+			let citationLine = `*${citation}*`;
+			if (annotation.creationDate && settings.includeAnnotationDates) {
+				citationLine += ` *(Created: ${annotation.creationDate.toDateString()})*`;
+			}
+			content += `${citationLine}\n\n`;
 
 			// Add note if present
-			if (annotation.note) {
-				content += `**Note:** ${annotation.note}\n\n`;
+			if (annotation.note && annotation.note.trim().length > 0) {
+				content += `**Note:** ${annotation.note.trim()}\n\n`;
 			}
 
 			content += '---\n\n';

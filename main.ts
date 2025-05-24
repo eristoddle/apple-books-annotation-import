@@ -88,7 +88,14 @@ export default class AppleBooksImporterPlugin extends Plugin {
 					// Get annotations for this book
 					let annotations = await AppleBooksDatabase.getAnnotationsForBook(assetId);
 					
+					// Filter out any annotations with empty text (additional safety check)
+					annotations = annotations.filter(annotation => {
+						const trimmedText = annotation.selectedText.trim();
+						return trimmedText.length > 0;
+					});
+					
 					if (annotations.length === 0) {
+						console.log(`No valid annotations found for: ${book.title}`);
 						skippedCount++;
 						continue;
 					}
@@ -100,7 +107,7 @@ export default class AppleBooksImporterPlugin extends Plugin {
 
 					// Extract additional metadata from EPUB if available
 					let enrichedBook = book;
-					if (book.path && this.settings.includeCovers) {
+					if (book.path && (this.settings.includeCovers || this.settings.includeMetadata)) {
 						try {
 							const epubMetadata = await AppleBooksDatabase.getEpubMetadata(book.path);
 							if (epubMetadata) {
@@ -111,6 +118,8 @@ export default class AppleBooksImporterPlugin extends Plugin {
 									language: epubMetadata.language || book.language,
 									publisher: epubMetadata.publisher || book.publisher,
 									publicationDate: epubMetadata.publicationDate || book.publicationDate,
+									rights: epubMetadata.rights || book.rights,
+									subjects: epubMetadata.subjects || book.subjects,
 									cover: epubMetadata.cover || book.cover
 								};
 								console.log(`Enhanced metadata for: ${book.title}`);

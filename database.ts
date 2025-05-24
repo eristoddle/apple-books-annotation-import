@@ -134,6 +134,8 @@ export class AppleBooksDatabase {
 			language: null,
 			publisher: null,
 			publicationDate: null,
+			rights: null,
+			subjects: null,
 			cover: null
 		};
 
@@ -161,6 +163,19 @@ export class AppleBooksDatabase {
 			// Extract publication date
 			const dateMatch = opfContent.match(/<dc:date[^>]*>([^<]+)<\/dc:date>/);
 			if (dateMatch) metadata.publicationDate = dateMatch[1];
+
+			// Extract rights
+			const rightsMatch = opfContent.match(/<dc:rights[^>]*>([^<]+)<\/dc:rights>/);
+			if (rightsMatch) metadata.rights = rightsMatch[1];
+
+			// Extract subjects (can be multiple)
+			const subjectMatches = opfContent.match(/<dc:subject[^>]*>([^<]+)<\/dc:subject>/g);
+			if (subjectMatches) {
+				metadata.subjects = subjectMatches.map(match => {
+					const subjectMatch = match.match(/<dc:subject[^>]*>([^<]+)<\/dc:subject>/);
+					return subjectMatch ? subjectMatch[1] : null;
+				}).filter(subject => subject !== null);
+			}
 
 		} catch (error: any) {
 			console.log('Error parsing OPF metadata:', error.message);
@@ -351,7 +366,11 @@ export class AppleBooksDatabase {
 			const dbPath = this.getDbPath(LIBRARY_DB_PATTERN);
 			console.log('Opening library database:', dbPath);
 
-			const query = `SELECT ZASSETID, ZSORTTITLE, ZSORTAUTHOR, ZBOOKDESCRIPTION, ZEPUBID, ZPATH FROM ZBKLIBRARYASSET;`;
+			const query = `SELECT 
+				ZASSETID, ZSORTTITLE, ZSORTAUTHOR, ZBOOKDESCRIPTION, ZEPUBID, ZPATH,
+				ZGENRE, ZGENRES, ZYEAR, ZPAGECOUNT, ZRATING, ZCOMMENTS, ZLANGUAGE,
+				ZREADINGPROGRESS, ZCREATIONDATE, ZLASTOPENDATE, ZMODIFICATIONDATE
+				FROM ZBKLIBRARYASSET;`;
 			const results = await this.executeSqlQueryWithHeaders(dbPath, query);
 
 			console.log('Library rows found:', results.length);
@@ -363,11 +382,25 @@ export class AppleBooksDatabase {
 				description: row.ZBOOKDESCRIPTION || null,
 				epubId: row.ZEPUBID || null,
 				path: row.ZPATH || null,
-				isbn: null,
-				language: null,
-				publisher: null,
-				publicationDate: null,
+				isbn: null, // Will be populated from EPUB metadata if available
+				language: row.ZLANGUAGE || null,
+				publisher: null, // Will be populated from EPUB metadata if available
+				publicationDate: null, // Will be populated from EPUB metadata if available
 				cover: null,
+				// Additional database fields
+				genre: row.ZGENRE || null,
+				genres: row.ZGENRES || null,
+				year: row.ZYEAR || null,
+				pageCount: (row.ZPAGECOUNT && parseInt(row.ZPAGECOUNT) > 1) ? parseInt(row.ZPAGECOUNT) : null,
+				rating: row.ZRATING ? parseInt(row.ZRATING) : null,
+				comments: row.ZCOMMENTS || null,
+				readingProgress: row.ZREADINGPROGRESS ? parseFloat(row.ZREADINGPROGRESS) : null,
+				creationDate: row.ZCREATIONDATE ? new Date(row.ZCREATIONDATE * 1000 + Date.UTC(2001, 0, 1)) : null,
+				lastOpenDate: row.ZLASTOPENDATE ? new Date(row.ZLASTOPENDATE * 1000 + Date.UTC(2001, 0, 1)) : null,
+				modificationDate: row.ZMODIFICATIONDATE ? new Date(row.ZMODIFICATIONDATE * 1000 + Date.UTC(2001, 0, 1)) : null,
+				// These will be populated from EPUB metadata
+				rights: null,
+				subjects: null,
 			}));
 		} catch (error: any) {
 			console.error('Error in getBookDetails:', error);
@@ -426,16 +459,48 @@ export class AppleBooksDatabase {
 		try {
 			const dbPath = this.getDbPath(ANNOTATION_DB_PATTERN);
 
-			const query = `SELECT ZANNOTATIONSELECTEDTEXT, ZANNOTATIONNOTE, ZANNOTATIONLOCATION, ZPLABSOLUTEPHYSICALLOCATION FROM ZAEANNOTATION WHERE ZANNOTATIONASSETID = '${assetId}' AND ZANNOTATIONSELECTEDTEXT != '' ORDER BY ZPLABSOLUTEPHYSICALLOCATION;`;
+			const query = `SELECT 
+				ZANNOTATIONSELECTEDTEXT, ZANNOTATIONNOTE, ZANNOTATIONLOCATION, ZPLABSOLUTEPHYSICALLOCATION,
+				ZANNOTATIONTYPE, ZANNOTATIONSTYLE, ZANNOTATIONISUNDERLINE,
+				ZANNOTATIONCREATIONDATE, ZANNOTATIONMODIFICATIONDATE, ZANNOTATIONUUID,
+				ZANNOTATIONREPRESENTATIVETEXT
+				FROM ZAEANNOTATION 
+				WHERE ZANNOTATIONASSETID = '${assetId}' 
+				AND ZANNOTATIONSELECTEDTEXT IS NOT NULL 
+				AND ZANNOTATIONSELECTEDTEXT != '' 
+				AND LENGTH(ZANNOTATIONSELECTEDTEXT) > 0
+				AND TRIM(ZANNOTATIONSELECTEDTEXT) != '' 
+				AND LENGTH(TRIM(ZANNOTATIONSELECTEDTEXT)) > 0
+				ORDER BY ZPLABSOLUTEPHYSICALLOCATION;`;
 
 			const results = await this.executeSqlQueryWithHeaders(dbPath, query);
+			
+			console.log(`Found ${results.length} annotation rows for asset ${assetId}`);
+			
+			// Debug: Log first few annotations to see what we're getting
+			results.slice(0, 3).forEach((row, index) => {
+				console.log(`Annotation ${index}: "${row.ZANNOTATIONSELECTEDTEXT}" (length: ${row.ZANNOTATIONSELECTEDTEXT?.length || 0})`);
+			});
 
-			return results.map((row: any) => ({
-				selectedText: row.ZANNOTATIONSELECTEDTEXT || '',
-				note: row.ZANNOTATIONNOTE || null,
-				location: row.ZANNOTATIONLOCATION || null,
-				physicalLocation: row.ZPLABSOLUTEPHYSICALLOCATION ? parseInt(row.ZPLABSOLUTEPHYSICALLOCATION) : null,
-			}));
+			return results
+				.map((row: any) => ({
+					selectedText: row.ZANNOTATIONSELECTEDTEXT || '',
+					note: row.ZANNOTATIONNOTE || null,
+					location: row.ZANNOTATIONLOCATION || null,
+					physicalLocation: row.ZPLABSOLUTEPHYSICALLOCATION ? parseInt(row.ZPLABSOLUTEPHYSICALLOCATION) : null,
+					annotationType: row.ZANNOTATIONTYPE ? parseInt(row.ZANNOTATIONTYPE) : null,
+					annotationStyle: row.ZANNOTATIONSTYLE ? parseInt(row.ZANNOTATIONSTYLE) : null,
+					isUnderline: row.ZANNOTATIONISUNDERLINE === '1',
+					creationDate: row.ZANNOTATIONCREATIONDATE ? new Date(row.ZANNOTATIONCREATIONDATE * 1000 + Date.UTC(2001, 0, 1)) : null,
+					modificationDate: row.ZANNOTATIONMODIFICATIONDATE ? new Date(row.ZANNOTATIONMODIFICATIONDATE * 1000 + Date.UTC(2001, 0, 1)) : null,
+					uuid: row.ZANNOTATIONUUID || null,
+					representativeText: row.ZANNOTATIONREPRESENTATIVETEXT || null,
+				}))
+				.filter(annotation => {
+					// Filter out annotations with empty or whitespace-only text
+					const trimmedText = annotation.selectedText.trim();
+					return trimmedText.length > 0 && trimmedText !== '';
+				});
 		} catch (error: any) {
 			throw new Error(`Failed to get annotations for book ${assetId}: ${error?.message || 'Unknown error'}`);
 		}

@@ -12,6 +12,9 @@ export const DEFAULT_SETTINGS: AppleBooksImporterSettings = {
 	customTags: "book/notes",
 	includeChapterInfo: true,
 	sortAnnotations: true,
+	includeAnnotationDates: true,
+	includeAnnotationStyles: true,
+	includeReadingProgress: true,
 };
 
 export class AppleBooksImporterSettingTab extends PluginSettingTab {
@@ -131,6 +134,45 @@ export class AppleBooksImporterSettingTab extends PluginSettingTab {
 					.setValue(this.plugin.settings.sortAnnotations)
 					.onChange(async (value) => {
 						this.plugin.settings.sortAnnotations = value;
+						await this.plugin.saveSettings();
+					})
+			);
+
+		// Include annotation dates
+		new Setting(containerEl)
+			.setName("Include annotation dates")
+			.setDesc("Show when annotations were created")
+			.addToggle((toggle) =>
+				toggle
+					.setValue(this.plugin.settings.includeAnnotationDates)
+					.onChange(async (value) => {
+						this.plugin.settings.includeAnnotationDates = value;
+						await this.plugin.saveSettings();
+					})
+			);
+
+		// Include annotation styles
+		new Setting(containerEl)
+			.setName("Include annotation styles")
+			.setDesc("Show highlight colors and underline indicators")
+			.addToggle((toggle) =>
+				toggle
+					.setValue(this.plugin.settings.includeAnnotationStyles)
+					.onChange(async (value) => {
+						this.plugin.settings.includeAnnotationStyles = value;
+						await this.plugin.saveSettings();
+					})
+			);
+
+		// Include reading progress
+		new Setting(containerEl)
+			.setName("Include reading progress")
+			.setDesc("Show how much of each book has been read")
+			.addToggle((toggle) =>
+				toggle
+					.setValue(this.plugin.settings.includeReadingProgress)
+					.onChange(async (value) => {
+						this.plugin.settings.includeReadingProgress = value;
 						await this.plugin.saveSettings();
 					})
 			);
