@@ -20,7 +20,6 @@
 	"author": "Stephan Miller",
 	"license": "MIT",
 	"devDependencies": {
-		"@types/better-sqlite3": "^7.6.13",
 		"@types/glob": "^8.1.0",
 		"@types/node": "^16.11.6",
 		"@typescript-eslint/eslint-plugin": "5.29.0",
@@ -32,7 +31,7 @@
 		"typescript": "4.7.4"
 	},
 	"dependencies": {
-		"better-sqlite3": "^8.7.0",
-		"glob": "^8.0.3"
+		"glob": "^8.0.3",
+		"sqlite3": "^5.1.7"
 	}
 }

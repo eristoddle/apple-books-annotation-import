@@ -3,7 +3,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 import * as glob from 'glob';
-import Database from 'better-sqlite3';
+import * as sqlite3 from 'sqlite3';
 import { BookDetail, Annotation } from './types';
 
 const ANNOTATION_DB_PATTERN = path.join(
@@ -62,120 +62,180 @@ export class AppleBooksDatabase {
 		}
 	}
 
-	static getBookDetails(): BookDetail[] {
-		try {
-			const dbPath = this.getDbPath(LIBRARY_DB_PATTERN);
-			console.log('Opening library database:', dbPath);
-			const db = new Database(dbPath, { readonly: true });
+	static async getBookDetails(): Promise<BookDetail[]> {
+		return new Promise((resolve, reject) => {
+			try {
+				const dbPath = this.getDbPath(LIBRARY_DB_PATTERN);
+				console.log('Opening library database:', dbPath);
+				const db = new sqlite3.Database(dbPath, sqlite3.OPEN_READONLY, (err) => {
+					if (err) {
+						console.error('Error opening library database:', err);
+						reject(new Error(`Failed to open library database: ${err.message}`));
+						return;
+					}
 
-			const query = `
-				SELECT ZASSETID, ZSORTTITLE, ZSORTAUTHOR, ZBOOKDESCRIPTION, ZEPUBID, ZPATH
-				FROM ZBKLIBRARYASSET
-			`;
+					const query = `
+						SELECT ZASSETID, ZSORTTITLE, ZSORTAUTHOR, ZBOOKDESCRIPTION, ZEPUBID, ZPATH
+						FROM ZBKLIBRARYASSET
+					`;
 
-			const rows = db.prepare(query).all();
-			console.log('Library rows found:', rows.length);
-			db.close();
+					db.all(query, [], (err, rows: any[]) => {
+						db.close();
+						
+						if (err) {
+							console.error('Error querying library database:', err);
+							reject(new Error(`Failed to query library database: ${err.message}`));
+							return;
+						}
 
-			return rows.map((row: any) => ({
-				assetId: row.ZASSETID,
-				title: row.ZSORTTITLE || 'Unknown Title',
-				author: row.ZSORTAUTHOR || null,
-				description: row.ZBOOKDESCRIPTION || null,
-				epubId: row.ZEPUBID || null,
-				path: row.ZPATH || null,
-				isbn: null,
-				language: null,
-				publisher: null,
-				publicationDate: null,
-				cover: null,
-			}));
-		} catch (error: any) {
-			console.error('Error in getBookDetails:', error);
-			throw new Error(`Failed to get book details: ${error?.message || 'Unknown error'}`);
-		}
-	}
+						console.log('Library rows found:', rows.length);
+						
+						const bookDetails = rows.map((row: any) => ({
+							assetId: row.ZASSETID,
+							title: row.ZSORTTITLE || 'Unknown Title',
+							author: row.ZSORTAUTHOR || null,
+							description: row.ZBOOKDESCRIPTION || null,
+							epubId: row.ZEPUBID || null,
+							path: row.ZPATH || null,
+							isbn: null,
+							language: null,
+							publisher: null,
+							publicationDate: null,
+							cover: null,
+						}));
 
-	static getBooksWithHighlights(): string[] {
-		try {
-			const annotationDbPath = this.getDbPath(ANNOTATION_DB_PATTERN);
-			const libraryDbPath = this.getDbPath(LIBRARY_DB_PATTERN);
-			console.log('Getting books with highlights from:', { annotationDbPath, libraryDbPath });
-
-			// Get all book IDs from library
-			const libraryDb = new Database(libraryDbPath, { readonly: true });
-			const libraryRows = libraryDb.prepare('SELECT ZASSETID FROM ZBKLIBRARYASSET').all();
-			libraryDb.close();
-			console.log('Library rows:', libraryRows.length);
-
-			// Filter out any null/undefined asset IDs and ensure they're strings
-			const bookIds = libraryRows
-				.map((row: any) => row?.ZASSETID)
-				.filter((id: any) => id !== null && id !== undefined)
-				.map((id: any) => String(id));
-
-			console.log('Valid book IDs:', bookIds.length);
-
-			if (bookIds.length === 0) {
-				console.log('No book IDs found');
-				return [];
+						resolve(bookDetails);
+					});
+				});
+			} catch (error: any) {
+				console.error('Error in getBookDetails:', error);
+				reject(new Error(`Failed to get book details: ${error?.message || 'Unknown error'}`));
 			}
-
-			// Find books with highlights
-			const annotationDb = new Database(annotationDbPath, { readonly: true });
-			
-			// Use a simpler approach to avoid potential issues with large parameter lists
-			const query = `
-				SELECT DISTINCT ZANNOTATIONASSETID
-				FROM ZAEANNOTATION
-				WHERE ZANNOTATIONASSETID IS NOT NULL
-				AND ZANNOTATIONSELECTEDTEXT IS NOT NULL
-				AND ZANNOTATIONSELECTEDTEXT != ""
-			`;
-
-			const annotationRows = annotationDb.prepare(query).all();
-			annotationDb.close();
-			console.log('Annotation rows found:', annotationRows.length);
-
-			// Filter annotations to only include books that exist in our library
-			const booksWithHighlights = annotationRows
-				.map((row: any) => row?.ZANNOTATIONASSETID)
-				.filter((id: any) => id !== null && id !== undefined)
-				.map((id: any) => String(id))
-				.filter((id: string) => bookIds.includes(id));
-
-			console.log('Books with highlights:', booksWithHighlights.length);
-			return [...new Set(booksWithHighlights)]; // Remove duplicates
-		} catch (error: any) {
-			console.error('Error in getBooksWithHighlights:', error);
-			throw new Error(`Failed to get books with highlights: ${error?.message || 'Unknown error'}`);
-		}
+		});
 	}
 
-	static getAnnotationsForBook(assetId: string): Annotation[] {
-		try {
-			const dbPath = this.getDbPath(ANNOTATION_DB_PATTERN);
-			const db = new Database(dbPath, { readonly: true });
+	static async getBooksWithHighlights(): Promise<string[]> {
+		return new Promise((resolve, reject) => {
+			try {
+				const annotationDbPath = this.getDbPath(ANNOTATION_DB_PATTERN);
+				const libraryDbPath = this.getDbPath(LIBRARY_DB_PATTERN);
+				console.log('Getting books with highlights from:', { annotationDbPath, libraryDbPath });
 
-			const query = `
-				SELECT ZANNOTATIONSELECTEDTEXT, ZANNOTATIONNOTE, ZANNOTATIONLOCATION, ZPLABSOLUTEPHYSICALLOCATION
-				FROM ZAEANNOTATION
-				WHERE ZANNOTATIONASSETID = ? AND ZANNOTATIONSELECTEDTEXT != ""
-				ORDER BY ZPLABSOLUTEPHYSICALLOCATION
-			`;
+				// Get all book IDs from library first
+				const libraryDb = new sqlite3.Database(libraryDbPath, sqlite3.OPEN_READONLY, (err) => {
+					if (err) {
+						reject(new Error(`Failed to open library database: ${err.message}`));
+						return;
+					}
 
-			const rows = db.prepare(query).all(assetId);
-			db.close();
+					libraryDb.all('SELECT ZASSETID FROM ZBKLIBRARYASSET', [], (err, libraryRows: any[]) => {
+						if (err) {
+							libraryDb.close();
+							reject(new Error(`Failed to query library: ${err.message}`));
+							return;
+						}
 
-			return rows.map((row: any) => ({
-				selectedText: row.ZANNOTATIONSELECTEDTEXT || '',
-				note: row.ZANNOTATIONNOTE || null,
-				location: row.ZANNOTATIONLOCATION || null,
-				physicalLocation: row.ZPLABSOLUTEPHYSICALLOCATION || null,
-			}));
-		} catch (error: any) {
-			throw new Error(`Failed to get annotations for book ${assetId}: ${error?.message || 'Unknown error'}`);
-		}
+						console.log('Library rows:', libraryRows.length);
+
+						// Filter out any null/undefined asset IDs and ensure they're strings
+						const bookIds = libraryRows
+							.map((row: any) => row?.ZASSETID)
+							.filter((id: any) => id !== null && id !== undefined)
+							.map((id: any) => String(id));
+
+						console.log('Valid book IDs:', bookIds.length);
+						libraryDb.close();
+
+						if (bookIds.length === 0) {
+							console.log('No book IDs found');
+							resolve([]);
+							return;
+						}
+
+						// Now get annotations
+						const annotationDb = new sqlite3.Database(annotationDbPath, sqlite3.OPEN_READONLY, (err) => {
+							if (err) {
+								reject(new Error(`Failed to open annotation database: ${err.message}`));
+								return;
+							}
+
+							const query = `
+								SELECT DISTINCT ZANNOTATIONASSETID
+								FROM ZAEANNOTATION
+								WHERE ZANNOTATIONASSETID IS NOT NULL
+								AND ZANNOTATIONSELECTEDTEXT IS NOT NULL
+								AND ZANNOTATIONSELECTEDTEXT != ""
+							`;
+
+							annotationDb.all(query, [], (err, annotationRows: any[]) => {
+								annotationDb.close();
+
+								if (err) {
+									reject(new Error(`Failed to query annotations: ${err.message}`));
+									return;
+								}
+
+								console.log('Annotation rows found:', annotationRows.length);
+
+								// Filter annotations to only include books that exist in our library
+								const booksWithHighlights = annotationRows
+									.map((row: any) => row?.ZANNOTATIONASSETID)
+									.filter((id: any) => id !== null && id !== undefined)
+									.map((id: any) => String(id))
+									.filter((id: string) => bookIds.includes(id));
+
+								console.log('Books with highlights:', booksWithHighlights.length);
+								resolve([...new Set(booksWithHighlights)]); // Remove duplicates
+							});
+						});
+					});
+				});
+			} catch (error: any) {
+				console.error('Error in getBooksWithHighlights:', error);
+				reject(new Error(`Failed to get books with highlights: ${error?.message || 'Unknown error'}`));
+			}
+		});
+	}
+
+	static async getAnnotationsForBook(assetId: string): Promise<Annotation[]> {
+		return new Promise((resolve, reject) => {
+			try {
+				const dbPath = this.getDbPath(ANNOTATION_DB_PATTERN);
+				const db = new sqlite3.Database(dbPath, sqlite3.OPEN_READONLY, (err) => {
+					if (err) {
+						reject(new Error(`Failed to open annotation database: ${err.message}`));
+						return;
+					}
+
+					const query = `
+						SELECT ZANNOTATIONSELECTEDTEXT, ZANNOTATIONNOTE, ZANNOTATIONLOCATION, ZPLABSOLUTEPHYSICALLOCATION
+						FROM ZAEANNOTATION
+						WHERE ZANNOTATIONASSETID = ? AND ZANNOTATIONSELECTEDTEXT != ""
+						ORDER BY ZPLABSOLUTEPHYSICALLOCATION
+					`;
+
+					db.all(query, [assetId], (err, rows: any[]) => {
+						db.close();
+
+						if (err) {
+							reject(new Error(`Failed to query annotations for book ${assetId}: ${err.message}`));
+							return;
+						}
+
+						const annotations = rows.map((row: any) => ({
+							selectedText: row.ZANNOTATIONSELECTEDTEXT || '',
+							note: row.ZANNOTATIONNOTE || null,
+							location: row.ZANNOTATIONLOCATION || null,
+							physicalLocation: row.ZPLABSOLUTEPHYSICALLOCATION || null,
+						}));
+
+						resolve(annotations);
+					});
+				});
+			} catch (error: any) {
+				reject(new Error(`Failed to get annotations for book ${assetId}: ${error?.message || 'Unknown error'}`));
+			}
+		});
 	}
 
 	static sortAnnotationsByCFI(annotations: Annotation[]): Annotation[] {

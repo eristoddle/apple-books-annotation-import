@@ -61,7 +61,7 @@ export default class AppleBooksImporterPlugin extends Plugin {
 		try {
 			// Get all books with highlights
 			console.log('Getting books with highlights...');
-			const booksWithHighlights = AppleBooksDatabase.getBooksWithHighlights();
+			const booksWithHighlights = await AppleBooksDatabase.getBooksWithHighlights();
 			console.log('Books with highlights:', booksWithHighlights);
 			
 			if (booksWithHighlights.length === 0) {
@@ -72,7 +72,7 @@ export default class AppleBooksImporterPlugin extends Plugin {
 			new Notice(`Found ${booksWithHighlights.length} books with highlights`, 3000);
 
 			// Get book details
-			const allBooks = AppleBooksDatabase.getBookDetails();
+			const allBooks = await AppleBooksDatabase.getBookDetails();
 			let importedCount = 0;
 			let skippedCount = 0;
 
@@ -86,7 +86,7 @@ export default class AppleBooksImporterPlugin extends Plugin {
 					}
 
 					// Get annotations for this book
-					let annotations = AppleBooksDatabase.getAnnotationsForBook(assetId);
+					let annotations = await AppleBooksDatabase.getAnnotationsForBook(assetId);
 					
 					if (annotations.length === 0) {
 						skippedCount++;
@@ -180,8 +180,8 @@ export default class AppleBooksImporterPlugin extends Plugin {
 				return;
 			}
 
-			const booksWithHighlights = AppleBooksDatabase.getBooksWithHighlights();
-			const allBooks = AppleBooksDatabase.getBookDetails();
+			const booksWithHighlights = await AppleBooksDatabase.getBooksWithHighlights();
+			const allBooks = await AppleBooksDatabase.getBookDetails();
 			
 			const availableBooks = booksWithHighlights
 				.map(assetId => allBooks.find(b => b.assetId === assetId))
