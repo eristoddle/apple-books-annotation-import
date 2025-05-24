@@ -36,59 +36,207 @@ export class AppleBooksDatabase {
 			return null;
 		}
 
-		// First, let's do exactly what the Python script does - just try the path directly
 		try {
-			console.log('Checking if file exists at original path:', epubPath);
-			const stats = fs.statSync(epubPath);
-			console.log('File exists! Size:', stats.size, 'bytes');
-			
-			// If we can stat it, try to read it
-			const buffer = fs.readFileSync(epubPath);
-			console.log('Successfully read file, size:', buffer.length, 'bytes');
-			
-			return {
-				isbn: null,
-				language: null,
-				publisher: null,
-				publicationDate: null,
-				cover: null,
-				fileSize: buffer.length,
-				filePath: epubPath
-			};
-			
-		} catch (directError) {
-			console.log('Direct path failed:', directError.message);
-		}
-
-		// Let's also try to explore what's actually in the containers directory
-		try {
-			const containersDir = path.join(os.homedir(), 'Library/Containers');
-			console.log('Exploring containers directory:', containersDir);
-			
-			const containers = fs.readdirSync(containersDir).filter(name => 
-				name.includes('apple') && name.toLowerCase().includes('book')
-			);
-			console.log('Found book-related containers:', containers);
-			
-			for (const container of containers) {
-				const containerPath = path.join(containersDir, container);
-				try {
-					const documentsPath = path.join(containerPath, 'Data/Documents');
-					if (fs.existsSync(documentsPath)) {
-						console.log('Documents path exists:', documentsPath);
-						// Look for iBooks or Books directory
-						const documentsContents = fs.readdirSync(documentsPath);
-						console.log('Documents contents:', documentsContents);
+			// Check if this is an extracted EPUB directory (which it should be based on our logs)
+			if (fs.existsSync(epubPath)) {
+				const stats = fs.statSync(epubPath);
+				console.log('Path exists - isFile:', stats.isFile(), 'isDirectory:', stats.isDirectory());
+				
+				if (stats.isDirectory()) {
+					console.log('Found extracted EPUB directory, reading metadata...');
+					
+					// This is an extracted EPUB directory - read metadata from standard EPUB structure
+					const metadata = await this.readEpubDirectoryMetadata(epubPath);
+					if (metadata) {
+						console.log('Successfully extracted EPUB metadata:', metadata);
+						return metadata;
 					}
-				} catch (containerError) {
-					console.log('Error exploring container:', container, containerError.message);
+				} else if (stats.isFile()) {
+					console.log('Found EPUB file, attempting to read...');
+					// Could handle .epub files here if needed
 				}
 			}
-		} catch (exploreError) {
-			console.log('Error exploring containers:', exploreError.message);
+
+		} catch (error: any) {
+			console.log('EPUB metadata extraction failed:', error.message);
 		}
 
-		console.log('EPUB file not accessible, continuing without metadata');
+		console.log('EPUB metadata not accessible, continuing without enhanced metadata');
+		return null;
+	}
+
+	private static async readEpubDirectoryMetadata(epubDir: string): Promise<any> {
+		try {
+			// Look for the standard EPUB metadata file: META-INF/container.xml
+			const metaInfPath = path.join(epubDir, 'META-INF');
+			const containerXmlPath = path.join(metaInfPath, 'container.xml');
+			
+			if (!fs.existsSync(containerXmlPath)) {
+				console.log('container.xml not found, trying alternative metadata sources...');
+				
+				// Try to read iTunes metadata as fallback
+				const iTunesMetadataPath = path.join(epubDir, 'iTunesMetadata.plist');
+				if (fs.existsSync(iTunesMetadataPath)) {
+					console.log('Reading iTunes metadata...');
+					const iTunesContent = fs.readFileSync(iTunesMetadataPath, 'utf8');
+					console.log('iTunes metadata found, size:', iTunesContent.length);
+					
+					// Extract basic info from iTunes metadata
+					const metadata = this.parseITunesMetadata(iTunesContent);
+					return metadata;
+				}
+				
+				return null;
+			}
+
+			console.log('Reading container.xml...');
+			const containerContent = fs.readFileSync(containerXmlPath, 'utf8');
+			
+			// Parse container.xml to find the OPF file
+			const rootfileMatch = containerContent.match(/full-path="([^"]+)"/);
+			if (!rootfileMatch) {
+				console.log('Could not find rootfile in container.xml');
+				return null;
+			}
+
+			const opfPath = path.join(epubDir, rootfileMatch[1]);
+			if (!fs.existsSync(opfPath)) {
+				console.log('OPF file not found:', opfPath);
+				return null;
+			}
+
+			console.log('Reading OPF file:', opfPath);
+			const opfContent = fs.readFileSync(opfPath, 'utf8');
+			
+			// Parse the OPF file for metadata
+			const metadata = this.parseOPFMetadata(opfContent);
+			console.log('Parsed OPF metadata:', metadata);
+			
+			// Try to find cover image
+			const coverPath = await this.findCoverImage(epubDir, opfContent);
+			if (coverPath) {
+				const coverBuffer = fs.readFileSync(coverPath);
+				metadata.cover = coverBuffer.toString('base64');
+				console.log('Found cover image, size:', coverBuffer.length, 'bytes');
+			}
+
+			return metadata;
+
+		} catch (error: any) {
+			console.log('Error reading EPUB directory metadata:', error.message);
+			return null;
+		}
+	}
+
+	private static parseOPFMetadata(opfContent: string): any {
+		const metadata: any = {
+			isbn: null,
+			language: null,
+			publisher: null,
+			publicationDate: null,
+			cover: null
+		};
+
+		try {
+			// Extract title
+			const titleMatch = opfContent.match(/<dc:title[^>]*>([^<]+)<\/dc:title>/);
+			if (titleMatch) metadata.title = titleMatch[1];
+
+			// Extract author
+			const authorMatch = opfContent.match(/<dc:creator[^>]*>([^<]+)<\/dc:creator>/);
+			if (authorMatch) metadata.author = authorMatch[1];
+
+			// Extract ISBN from identifier
+			const isbnMatch = opfContent.match(/<dc:identifier[^>]*(?:scheme="ISBN"|opf:scheme="ISBN")[^>]*>([^<]+)<\/dc:identifier>/i);
+			if (isbnMatch) metadata.isbn = isbnMatch[1];
+
+			// Extract language
+			const languageMatch = opfContent.match(/<dc:language[^>]*>([^<]+)<\/dc:language>/);
+			if (languageMatch) metadata.language = languageMatch[1];
+
+			// Extract publisher
+			const publisherMatch = opfContent.match(/<dc:publisher[^>]*>([^<]+)<\/dc:publisher>/);
+			if (publisherMatch) metadata.publisher = publisherMatch[1];
+
+			// Extract publication date
+			const dateMatch = opfContent.match(/<dc:date[^>]*>([^<]+)<\/dc:date>/);
+			if (dateMatch) metadata.publicationDate = dateMatch[1];
+
+		} catch (error: any) {
+			console.log('Error parsing OPF metadata:', error.message);
+		}
+
+		return metadata;
+	}
+
+	private static parseITunesMetadata(iTunesContent: string): any {
+		const metadata: any = {
+			isbn: null,
+			language: null,
+			publisher: null,
+			publicationDate: null,
+			cover: null
+		};
+
+		try {
+			// iTunes metadata is in plist format - extract basic info
+			// This is a simple parser for common fields
+			
+			const artistNameMatch = iTunesContent.match(/<key>artistName<\/key>\s*<string>([^<]+)<\/string>/);
+			if (artistNameMatch) metadata.author = artistNameMatch[1];
+
+			const itemNameMatch = iTunesContent.match(/<key>itemName<\/key>\s*<string>([^<]+)<\/string>/);
+			if (itemNameMatch) metadata.title = itemNameMatch[1];
+
+			const publisherMatch = iTunesContent.match(/<key>publisher<\/key>\s*<string>([^<]+)<\/string>/);
+			if (publisherMatch) metadata.publisher = publisherMatch[1];
+
+			console.log('Parsed iTunes metadata:', metadata);
+
+		} catch (error: any) {
+			console.log('Error parsing iTunes metadata:', error.message);
+		}
+
+		return metadata;
+	}
+
+	private static async findCoverImage(epubDir: string, opfContent: string): Promise<string | null> {
+		try {
+			// Look for cover image reference in OPF
+			const coverMatch = opfContent.match(/<item[^>]*id="cover"[^>]*href="([^"]+)"/i) ||
+				opfContent.match(/<item[^>]*href="([^"]*cover[^"]*\.(jpg|jpeg|png|gif))"/i);
+
+			if (coverMatch) {
+				const coverHref = coverMatch[1];
+				const oebpsPath = path.join(epubDir, 'OEBPS');
+				const coverPath = path.join(oebpsPath, coverHref);
+				
+				if (fs.existsSync(coverPath)) {
+					console.log('Found cover image:', coverPath);
+					return coverPath;
+				}
+			}
+
+			// Fallback: look for common cover image names in OEBPS directory
+			const oebpsPath = path.join(epubDir, 'OEBPS');
+			if (fs.existsSync(oebpsPath)) {
+				const oebpsContents = fs.readdirSync(oebpsPath);
+				const coverFiles = oebpsContents.filter(file => 
+					/cover\.(jpg|jpeg|png|gif)$/i.test(file) ||
+					/images\/cover\.(jpg|jpeg|png|gif)$/i.test(file)
+				);
+
+				if (coverFiles.length > 0) {
+					const coverPath = path.join(oebpsPath, coverFiles[0]);
+					console.log('Found cover image by name:', coverPath);
+					return coverPath;
+				}
+			}
+
+		} catch (error: any) {
+			console.log('Error finding cover image:', error.message);
+		}
+
 		return null;
 	}
 
