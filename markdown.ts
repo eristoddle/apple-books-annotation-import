@@ -38,6 +38,7 @@ export class MarkdownGenerator {
 			if (!bracketMatch) return null;
 
 			const chapterId = bracketMatch[1];
+			console.log('Extracted chapter ID:', chapterId);
 
 			// Handle different chapter naming patterns
 			if (chapterId.toLowerCase().includes('chapter_')) {
@@ -70,6 +71,19 @@ export class MarkdownGenerator {
 
 			if (chapterId.toLowerCase().includes('title')) {
 				return 'Title Page';
+			}
+
+			if (chapterId.toLowerCase().includes('text')) {
+				// Handle generic text sections - try to make them readable
+				if (chapterId.toLowerCase().includes('text-2') || chapterId.toLowerCase().includes('text 2')) {
+					return 'Preface';
+				} else if (chapterId.toLowerCase().includes('text-3') || chapterId.toLowerCase().includes('text 3')) {
+					return 'Preface (continued)';
+				} else if (chapterId.toLowerCase().includes('text-5') || chapterId.toLowerCase().includes('text 5')) {
+					return 'How to Begin';
+				} else {
+					return 'Text Section';
+				}
 			}
 
 			// Clean up the raw chapter ID as fallback
