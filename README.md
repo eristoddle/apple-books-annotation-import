@@ -262,7 +262,7 @@ npm run build
 
 ## 🆚 Comparison with Python Script
 
-This plugin provides several advantages over the original Python script:
+This plugin provides several advantages over [the original Python script](https://www.stephanmiller.com/import-osx-book-notes-into-obsidian/):
 
 | Feature | Python Script | Obsidian Plugin |
 |---------|---------------|-----------------|
