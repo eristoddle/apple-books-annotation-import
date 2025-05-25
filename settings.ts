@@ -15,6 +15,7 @@ export const DEFAULT_SETTINGS: AppleBooksImporterSettings = {
 	includeAnnotationDates: true,
 	includeAnnotationStyles: true,
 	includeReadingProgress: true,
+	createAuthorPages: true,
 };
 
 export class AppleBooksImporterSettingTab extends PluginSettingTab {
@@ -173,6 +174,19 @@ export class AppleBooksImporterSettingTab extends PluginSettingTab {
 					.setValue(this.plugin.settings.includeReadingProgress)
 					.onChange(async (value) => {
 						this.plugin.settings.includeReadingProgress = value;
+						await this.plugin.saveSettings();
+					})
+			);
+
+		// Create author pages
+		new Setting(containerEl)
+			.setName("Create author pages")
+			.setDesc("Automatically create author pages with dataview queries that list all books by that author")
+			.addToggle((toggle) =>
+				toggle
+					.setValue(this.plugin.settings.createAuthorPages)
+					.onChange(async (value) => {
+						this.plugin.settings.createAuthorPages = value;
 						await this.plugin.saveSettings();
 					})
 			);

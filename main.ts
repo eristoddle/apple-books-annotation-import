@@ -141,6 +141,12 @@ export default class AppleBooksImporterPlugin extends Plugin {
 
 					// Create the file
 					await this.createBookNote(fileName, markdownContent);
+
+					// Create author page if needed
+					if (enrichedBook.author) {
+						await this.createAuthorPageIfNeeded(enrichedBook.author);
+					}
+
 					importedCount++;
 
 					// Show progress for long imports
@@ -196,6 +202,55 @@ export default class AppleBooksImporterPlugin extends Plugin {
 
 		} catch (error: any) {
 			throw new Error(`Failed to create note ${fileName}: ${error?.message || 'Unknown error'}`);
+		}
+	}
+
+	async createAuthorPageIfNeeded(authorName: string): Promise<void> {
+		if (!this.settings.createAuthorPages || !authorName) {
+			return;
+		}
+
+		try {
+			// Ensure Authors folder exists
+			const authorsFolder = 'Authors';
+			const authorsFolderExists = await this.app.vault.adapter.exists(authorsFolder);
+			if (!authorsFolderExists) {
+				await this.app.vault.createFolder(authorsFolder);
+			}
+
+			// Check if author page already exists
+			const authorFileName = `${authorName}.md`;
+			const authorFilePath = `${authorsFolder}/${authorFileName}`;
+			const authorFileExists = await this.app.vault.adapter.exists(authorFilePath);
+
+			if (!authorFileExists) {
+				// Create author page with dataview query
+				const booksFolderPath = this.settings.outputFolder.trim() || '';
+				const searchPath = booksFolderPath ? `"${booksFolderPath}"` : '';
+				
+				const authorPageContent = `# ${authorName}
+
+## Books by this Author
+
+\`\`\`dataview
+TABLE title as "Title", publication_date as "Published", tags as "Tags"
+FROM ${searchPath}
+WHERE author = "${authorName}"
+SORT publication_date DESC
+\`\`\`
+
+## Notes about ${authorName}
+
+<!-- Add your notes about this author here -->
+`;
+
+				await this.app.vault.create(authorFilePath, authorPageContent);
+				console.log(`Created author page: ${authorFilePath}`);
+			}
+
+		} catch (error: any) {
+			console.error(`Failed to create author page for ${authorName}:`, error);
+			// Don't throw error - author page creation failure shouldn't stop book import
 		}
 	}
 

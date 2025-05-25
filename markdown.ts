@@ -231,7 +231,11 @@ export class MarkdownGenerator {
 		}
 		content += `- **Title:** ${book.title}\n`;
 		if (book.author) {
-			content += `- **Author:** [[Authors/${book.author}]]\n`;
+			if (settings.createAuthorPages) {
+				content += `- **Author:** [[Authors/${book.author}]]\n`;
+			} else {
+				content += `- **Author:** ${book.author}\n`;
+			}
 		}
 		if (book.description && settings.includeMetadata) {
 			content += `- **Description:** ${book.description}\n`;

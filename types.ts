@@ -59,4 +59,5 @@ export interface AppleBooksImporterSettings {
 	includeAnnotationDates: boolean;
 	includeAnnotationStyles: boolean;
 	includeReadingProgress: boolean;
+	createAuthorPages: boolean;
 }
