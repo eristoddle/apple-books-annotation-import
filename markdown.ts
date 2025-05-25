@@ -137,16 +137,25 @@ export class MarkdownGenerator {
 		// Generate frontmatter
 		content += '---\n';
 		
-		// Basic metadata
+		// Basic metadata - include asset_id like Python version
+		if (book.assetId) {
+			content += `asset_id: ${book.assetId}\n`;
+		}
 		content += `title: ${this.sanitizeFrontmatter(book.title)}\n`;
 		if (book.author) {
 			content += `author: ${this.sanitizeFrontmatter(book.author)}\n`;
 		}
 
-		// Extended metadata if enabled
+		// Extended metadata if enabled - include all fields like Python version
 		if (settings.includeMetadata) {
 			if (book.description) {
 				content += `description: ${this.sanitizeFrontmatter(book.description)}\n`;
+			}
+			if (book.epubId) {
+				content += `epub_id: ${book.epubId}\n`;
+			}
+			if (book.path) {
+				content += `path: ${book.path}\n`;
 			}
 			if (book.isbn) {
 				content += `isbn: ${book.isbn}\n`;
@@ -213,22 +222,40 @@ export class MarkdownGenerator {
 			content += '</p>\n\n';
 		}
 
-		// Metadata section
+		// Metadata section - include all fields like Python version
 		content += '## Metadata\n\n';
 		
-		if (book.author) {
-			content += `- **Author:** [[Authors/${book.author}]]\n`;
+		// Include all metadata fields like Python version
+		if (book.assetId) {
+			content += `- asset_id: ${book.assetId}\n`;
 		}
-		
+		content += `- title: ${book.title}\n`;
+		if (book.author) {
+			content += `- author: [[Authors/${book.author}]]\n`;
+		}
+		if (book.description && settings.includeMetadata) {
+			content += `- description: ${book.description}\n`;
+		}
+		if (book.epubId && settings.includeMetadata) {
+			content += `- epub_id: ${book.epubId}\n`;
+		}
 		if (book.path && settings.includeMetadata) {
-			content += `- **Path:** [${book.path}](file://${book.path})\n`;
+			content += `- path: [${book.path}](file://${book.path})\n`;
+		}
+		if (book.isbn && settings.includeMetadata) {
+			content += `- isbn: ${book.isbn}\n`;
+		}
+		if (book.language && settings.includeMetadata) {
+			content += `- language: ${book.language}\n`;
+		}
+		if (book.publisher && settings.includeMetadata) {
+			content += `- publisher: ${book.publisher}\n`;
+		}
+		if (book.publicationDate && settings.includeMetadata) {
+			content += `- publication_date: ${book.publicationDate}\n`;
 		}
 		
 		if (settings.includeMetadata) {
-			if (book.isbn) content += `- **ISBN:** ${book.isbn}\n`;
-			if (book.language) content += `- **Language:** ${book.language}\n`;
-			if (book.publisher) content += `- **Publisher:** ${book.publisher}\n`;
-			if (book.publicationDate) content += `- **Publication Date:** ${book.publicationDate}\n`;
 			if (book.year && book.year !== book.publicationDate) content += `- **Year:** ${book.year}\n`;
 			if (book.genre) content += `- **Genre:** ${book.genre}\n`;
 			if (book.pageCount) content += `- **Pages:** ${book.pageCount}\n`;
@@ -249,7 +276,7 @@ export class MarkdownGenerator {
 		}
 
 		if (settings.addTags && settings.customTags) {
-			content += `- **Tags:** ${settings.customTags}\n`;
+			content += `- tags: ${settings.customTags}\n`;
 		}
 
 		content += '\n## Annotations\n\n';
