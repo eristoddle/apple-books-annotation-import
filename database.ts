@@ -459,28 +459,12 @@ export class AppleBooksDatabase {
 		try {
 			const dbPath = this.getDbPath(ANNOTATION_DB_PATTERN);
 
-			const query = `SELECT 
-				ZANNOTATIONSELECTEDTEXT, ZANNOTATIONNOTE, ZANNOTATIONLOCATION, ZPLABSOLUTEPHYSICALLOCATION,
-				ZANNOTATIONTYPE, ZANNOTATIONSTYLE, ZANNOTATIONISUNDERLINE,
-				ZANNOTATIONCREATIONDATE, ZANNOTATIONMODIFICATIONDATE, ZANNOTATIONUUID,
-				ZANNOTATIONREPRESENTATIVETEXT
-				FROM ZAEANNOTATION 
-				WHERE ZANNOTATIONASSETID = '${assetId}' 
-				AND ZANNOTATIONSELECTEDTEXT IS NOT NULL 
-				AND ZANNOTATIONSELECTEDTEXT != '' 
-				AND LENGTH(ZANNOTATIONSELECTEDTEXT) > 0
-				AND TRIM(ZANNOTATIONSELECTEDTEXT) != '' 
-				AND LENGTH(TRIM(ZANNOTATIONSELECTEDTEXT)) > 0
-				ORDER BY ZPLABSOLUTEPHYSICALLOCATION;`;
+			// Use the EXACT same query as the working Python script
+			const query = `SELECT ZANNOTATIONSELECTEDTEXT, ZANNOTATIONNOTE, ZANNOTATIONLOCATION, ZPLABSOLUTEPHYSICALLOCATION FROM ZAEANNOTATION WHERE ZANNOTATIONASSETID = '${assetId}' AND ZANNOTATIONSELECTEDTEXT != '';`;
 
 			const results = await this.executeSqlQueryWithHeaders(dbPath, query);
 			
 			console.log(`Found ${results.length} annotation rows for asset ${assetId}`);
-			
-			// Debug: Log first few annotations to see what we're getting
-			results.slice(0, 3).forEach((row, index) => {
-				console.log(`Annotation ${index}: "${row.ZANNOTATIONSELECTEDTEXT}" (length: ${row.ZANNOTATIONSELECTEDTEXT?.length || 0})`);
-			});
 
 			return results
 				.map((row: any) => ({
@@ -488,13 +472,14 @@ export class AppleBooksDatabase {
 					note: row.ZANNOTATIONNOTE || null,
 					location: row.ZANNOTATIONLOCATION || null,
 					physicalLocation: row.ZPLABSOLUTEPHYSICALLOCATION ? parseInt(row.ZPLABSOLUTEPHYSICALLOCATION) : null,
-					annotationType: row.ZANNOTATIONTYPE ? parseInt(row.ZANNOTATIONTYPE) : null,
-					annotationStyle: row.ZANNOTATIONSTYLE ? parseInt(row.ZANNOTATIONSTYLE) : null,
-					isUnderline: row.ZANNOTATIONISUNDERLINE === '1',
-					creationDate: row.ZANNOTATIONCREATIONDATE ? new Date(row.ZANNOTATIONCREATIONDATE * 1000 + Date.UTC(2001, 0, 1)) : null,
-					modificationDate: row.ZANNOTATIONMODIFICATIONDATE ? new Date(row.ZANNOTATIONMODIFICATIONDATE * 1000 + Date.UTC(2001, 0, 1)) : null,
-					uuid: row.ZANNOTATIONUUID || null,
-					representativeText: row.ZANNOTATIONREPRESENTATIVETEXT || null,
+					// Set default values for fields we're not querying (to match the interface)
+					annotationType: null,
+					annotationStyle: null,
+					isUnderline: false,
+					creationDate: null,
+					modificationDate: null,
+					uuid: null,
+					representativeText: null,
 				}))
 				.filter(annotation => {
 					// Filter out annotations with empty or whitespace-only text
@@ -507,16 +492,12 @@ export class AppleBooksDatabase {
 	}
 
 	static sortAnnotationsByCFI(annotations: Annotation[]): Annotation[] {
+		// Use the EXACT same approach as the working Python script
 		return annotations.sort((a, b) => {
-			// If we have physical locations, use those
-			if (a.physicalLocation !== null && b.physicalLocation !== null) {
-				return a.physicalLocation - b.physicalLocation;
-			}
-
-			// Fallback to CFI parsing
 			const aCfi = this.parseCFIForSorting(a.location || '');
 			const bCfi = this.parseCFIForSorting(b.location || '');
 
+			// Compare each number in sequence
 			for (let i = 0; i < Math.min(aCfi.length, bCfi.length); i++) {
 				if (aCfi[i] !== bCfi[i]) {
 					return aCfi[i] - bCfi[i];
@@ -528,19 +509,26 @@ export class AppleBooksDatabase {
 	}
 
 	private static parseCFIForSorting(cfi: string): number[] {
+		// Copy the EXACT logic from the working Python script
 		if (!cfi || !cfi.startsWith('epubcfi(')) {
 			return [0];
 		}
 
 		try {
-			// Remove 'epubcfi(' and ')' and extract numbers
-			const content = cfi.substring(8, cfi.length - 1);
-			const parts = content.split('!');
+			// Remove 'epubcfi(' and ')' and split by common delimiters
+			const content = cfi.substring(8, cfi.length - 1); // Remove 'epubcfi(' and ')'
+
+			// Extract all numbers from the CFI
 			const numbers: number[] = [];
 
+			// Split by major sections (! separates different parts)
+			const parts = content.split('!');
+
 			for (const part of parts) {
-				// Remove bracketed content and extract numbers
+				// Find all numbers in each part, ignoring text in brackets
+				// Remove bracketed content first
 				const cleanPart = part.replace(/\[[^\]]*\]/g, '');
+				// Extract numbers
 				const nums = cleanPart.match(/\d+/g) || [];
 				numbers.push(...nums.map(n => parseInt(n, 10)));
 			}
