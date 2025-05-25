@@ -35,12 +35,25 @@ try {
 	console.log(`🔢 Bumping ${releaseType} version...`);
 	execSync(`npm version ${releaseType}`, { stdio: 'inherit' });
 
-	// Step 4: Get the new version
+	// Step 4: Get the new version and find the actual tag that was created
 	const packageJson = JSON.parse(readFileSync('package.json', 'utf8'));
 	const version = packageJson.version;
 	
-	// npm version creates a tag with 'v' prefix, so use that
-	const tagName = `v${version}`;
+	// Check which tag format was actually created
+	let tagName;
+	try {
+		const tags = execSync('git tag -l', { encoding: 'utf8' });
+		if (tags.includes(`v${version}`)) {
+			tagName = `v${version}`;
+		} else if (tags.includes(version)) {
+			tagName = version;
+		} else {
+			throw new Error(`No tag found for version ${version}`);
+		}
+	} catch (error) {
+		console.error('❌ Could not find the created tag');
+		throw error;
+	}
 
 	console.log(`🎯 Release version: ${version} (tag: ${tagName})`);
 
