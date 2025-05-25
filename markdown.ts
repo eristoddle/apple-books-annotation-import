@@ -227,32 +227,32 @@ export class MarkdownGenerator {
 		
 		// Include all metadata fields like Python version
 		if (book.assetId) {
-			content += `- asset_id: ${book.assetId}\n`;
+			content += `- **Asset ID:** ${book.assetId}\n`;
 		}
-		content += `- title: ${book.title}\n`;
+		content += `- **Title:** ${book.title}\n`;
 		if (book.author) {
-			content += `- author: [[Authors/${book.author}]]\n`;
+			content += `- **Author:** [[Authors/${book.author}]]\n`;
 		}
 		if (book.description && settings.includeMetadata) {
-			content += `- description: ${book.description}\n`;
+			content += `- **Description:** ${book.description}\n`;
 		}
 		if (book.epubId && settings.includeMetadata) {
-			content += `- epub_id: ${book.epubId}\n`;
+			content += `- **EPUB ID:** ${book.epubId}\n`;
 		}
 		if (book.path && settings.includeMetadata) {
-			content += `- path: [${book.path}](file://${book.path})\n`;
+			content += `- **Path:** [${book.path}](file://${book.path})\n`;
 		}
 		if (book.isbn && settings.includeMetadata) {
-			content += `- isbn: ${book.isbn}\n`;
+			content += `- **ISBN:** ${book.isbn}\n`;
 		}
 		if (book.language && settings.includeMetadata) {
-			content += `- language: ${book.language}\n`;
+			content += `- **Language:** ${book.language}\n`;
 		}
 		if (book.publisher && settings.includeMetadata) {
-			content += `- publisher: ${book.publisher}\n`;
+			content += `- **Publisher:** ${book.publisher}\n`;
 		}
 		if (book.publicationDate && settings.includeMetadata) {
-			content += `- publication_date: ${book.publicationDate}\n`;
+			content += `- **Publication Date:** ${book.publicationDate}\n`;
 		}
 		
 		if (settings.includeMetadata) {
@@ -276,7 +276,7 @@ export class MarkdownGenerator {
 		}
 
 		if (settings.addTags && settings.customTags) {
-			content += `- tags: ${settings.customTags}\n`;
+			content += `- **Tags:** ${settings.customTags}\n`;
 		}
 
 		content += '\n## Annotations\n\n';
