@@ -5,6 +5,6 @@
 	"minAppVersion": "0.15.0",
 	"description": "Import highlights and notes from Apple Books app into Obsidian. Extracts annotations from macOS Books SQLite databases and creates formatted markdown notes.",
 	"author": "Stephan Miller",
-	"authorUrl": "https://github.com/stmiller",
+	"authorUrl": "https://github.com/eristoddle",
 	"isDesktopOnly": true
 }
