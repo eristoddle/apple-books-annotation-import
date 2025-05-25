@@ -38,9 +38,11 @@ try {
 	// Step 4: Get the new version
 	const packageJson = JSON.parse(readFileSync('package.json', 'utf8'));
 	const version = packageJson.version;
+	
+	// npm version creates a tag with 'v' prefix, so use that
 	const tagName = `v${version}`;
 
-	console.log(`🎯 Release version: ${version}`);
+	console.log(`🎯 Release version: ${version} (tag: ${tagName})`);
 
 	// Step 5: Push the branch and tag
 	console.log('⬆️  Pushing branch...');
