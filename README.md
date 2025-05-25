@@ -41,7 +41,7 @@ Import highlights and notes from the Apple Books app directly into your Obsidian
 
 ### Method 1: Manual Installation (Recommended)
 
-1. **Download the latest release** from the [releases page](https://github.com/eristoddle/obsidian-apple-books-import/releases)
+1. **Download the latest release** from the [releases page](https://github.com/eristoddle/apple-books-annotation-import/releases)
 2. **Extract the files** to your vault's `.obsidian/plugins/apple-books-annotation-import/` directory
 3. **Restart Obsidian** and enable the plugin in Settings → Community Plugins
 
