@@ -39,13 +39,26 @@ Import highlights and notes from the Apple Books app directly into your Obsidian
 
 ## 🚀 Installation
 
-### Method 1: Manual Installation (Recommended)
+### Method 1: Using BRAT (Easiest for Testing) ⭐
+
+The simplest way to install and test this plugin is with BRAT (Beta Reviewer's Auto-update Tool):
+
+1. **Install BRAT** from the Community Plugins store in Obsidian
+2. **Open BRAT settings** (Settings → BRAT)  
+3. **Click "Add Beta plugin"**
+4. **Enter this repository URL**: `https://github.com/eristoddle/obsidian-apple-books-import`
+5. **Click "Add Plugin"** - BRAT will automatically install and enable it
+6. **Auto-updates**: BRAT will automatically update the plugin when new versions are released
+
+> 💡 **Why use BRAT?** Perfect for testing development versions and getting automatic updates without manual downloads.
+
+### Method 2: Manual Installation
 
 1. **Download the latest release** from the [releases page](https://github.com/eristoddle/apple-books-annotation-import/releases)
 2. **Extract the files** to your vault's `.obsidian/plugins/apple-books-annotation-import/` directory
 3. **Restart Obsidian** and enable the plugin in Settings → Community Plugins
 
-### Method 2: Build from Source
+### Method 3: Build from Source
 
 1. **Clone this repository** into your vault's plugins directory:
    ```bash
