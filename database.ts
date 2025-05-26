@@ -550,7 +550,7 @@ export class AppleBooksDatabase {
 			
 			console.log(`Found ${results.length} annotation rows for asset ${assetId}`);
 
-			return results
+			const annotations = results
 				.map((row: any) => ({
 					selectedText: row.ZANNOTATIONSELECTEDTEXT || '',
 					note: row.ZANNOTATIONNOTE || null,
@@ -570,12 +570,58 @@ export class AppleBooksDatabase {
 					const trimmedText = annotation.selectedText.trim();
 					return trimmedText.length > 0 && trimmedText !== '';
 				});
+
+			// The Python script must be grouping consecutive null-location annotations
+			// with the next annotation that has location data
+			return this.groupConsecutiveNullLocationAnnotations(annotations);
 		} catch (error: any) {
 			throw new Error(`Failed to get annotations for book ${assetId}: ${error?.message || 'Unknown error'}`);
 		}
 	}
 
 
+
+	private static groupConsecutiveNullLocationAnnotations(annotations: Annotation[]): Annotation[] {
+		const result: Annotation[] = [];
+		let nullLocationGroup: Annotation[] = [];
+
+		for (const annotation of annotations) {
+			if (annotation.location === null && annotation.physicalLocation === null) {
+				// Collect null-location annotations
+				nullLocationGroup.push(annotation);
+			} else {
+				// Found annotation with location - combine any collected null-location ones with this one
+				if (nullLocationGroup.length > 0) {
+					const allTexts = [...nullLocationGroup, annotation].map(a => a.selectedText);
+					const combinedText = allTexts.join('\n');
+					
+					const combinedAnnotation: Annotation = {
+						...annotation, // Use the located annotation as the base
+						selectedText: combinedText,
+					};
+					
+					result.push(combinedAnnotation);
+					nullLocationGroup = []; // Reset
+				} else {
+					// No preceding null-location annotations, just add this one
+					result.push(annotation);
+				}
+			}
+		}
+
+		// Handle any remaining null-location annotations at the end
+		if (nullLocationGroup.length > 0) {
+			const combinedText = nullLocationGroup.map(a => a.selectedText).join('\n');
+			const combinedAnnotation: Annotation = {
+				...nullLocationGroup[0],
+				selectedText: combinedText,
+			};
+			result.push(combinedAnnotation);
+		}
+
+		console.log(`Combined ${annotations.length} raw annotations into ${result.length} final annotations`);
+		return result;
+	}
 
 	static sortAnnotationsByCFI(annotations: Annotation[]): Annotation[] {
 		// Use the EXACT same approach as the working Python script

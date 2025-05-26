@@ -88,6 +88,31 @@ export default class AppleBooksImporterPlugin extends Plugin {
 					// Get annotations for this book
 					let annotations = await AppleBooksDatabase.getAnnotationsForBook(assetId);
 					
+					// Debug logging for books with potential list splitting issues
+					// Look for annotations that seem like list items or short fragments
+					const hasListPattern = annotations.some(annotation => {
+						const text = annotation.selectedText.trim();
+						return text.length < 50 && (
+							text.includes(':') ||  // "People: 75 entries"
+							/^\w+:/.test(text) ||   // "Experiences:"
+							/\d+\s+entries?/.test(text) // "76 entries"
+						);
+					});
+
+					if (hasListPattern) {
+						console.log('\n=== DEBUGGING LIST PATTERN BOOK ===');
+						console.log(`Book: ${book.title}`);
+						console.log(`Raw annotations count: ${annotations.length}`);
+						annotations.forEach((annotation, i) => {
+							console.log(`\nAnnotation ${i}:`);
+							console.log(`  Text: "${annotation.selectedText}"`);
+							console.log(`  Text length: ${annotation.selectedText.length}`);
+							console.log(`  Location: ${annotation.location}`);
+							console.log(`  Physical: ${annotation.physicalLocation}`);
+						});
+						console.log('=== END DEBUG ===\n');
+					}
+					
 					// Filter out any annotations with empty text (additional safety check)
 					annotations = annotations.filter(annotation => {
 						const trimmedText = annotation.selectedText.trim();
