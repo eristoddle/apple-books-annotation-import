@@ -562,18 +562,37 @@ export class AppleBooksDatabase {
 
 			console.log('Querying annotation columns:', queryColumns);
 
-			const query = `SELECT ${queryColumns.join(', ')} FROM ZAEANNOTATION WHERE ZANNOTATIONASSETID = '${assetId}' AND ZANNOTATIONSELECTEDTEXT != '';`;
+			const query = `SELECT DISTINCT ${queryColumns.join(', ')} FROM ZAEANNOTATION WHERE ZANNOTATIONASSETID = '${assetId}' AND ZANNOTATIONSELECTEDTEXT != '';`;
 
 			const results = await this.executeSqlQueryWithHeaders(dbPath, query);
 			
 			console.log(`Found ${results.length} annotation rows for asset ${assetId}`);
 
 			// Log the raw results to debug duplication issues
-			console.log('Raw annotation data sample:', results.slice(0, 3).map(row => ({
-				text: row.ZANNOTATIONSELECTEDTEXT?.substring(0, 50) + '...',
+			console.log('Raw annotation data sample:', results.slice(0, 5).map((row, index) => ({
+				index,
+				text: row.ZANNOTATIONSELECTEDTEXT?.substring(0, 80) + '...',
 				location: row.ZANNOTATIONLOCATION,
-				physicalLocation: row.ZPLABSOLUTEPHYSICALLOCATION
+				physicalLocation: row.ZPLABSOLUTEPHYSICALLOCATION,
+				textLength: row.ZANNOTATIONSELECTEDTEXT?.length
 			})));
+
+			// Check for obvious duplicates in raw data
+			const textCounts = new Map<string, number>();
+			for (const row of results) {
+				const text = row.ZANNOTATIONSELECTEDTEXT?.trim();
+				if (text) {
+					textCounts.set(text, (textCounts.get(text) || 0) + 1);
+				}
+			}
+			
+			const duplicatesInRaw = Array.from(textCounts.entries()).filter(([text, count]) => count > 1);
+			if (duplicatesInRaw.length > 0) {
+				console.log('Found duplicates in raw database results:');
+				duplicatesInRaw.forEach(([text, count]) => {
+					console.log(`  "${text.substring(0, 50)}..." appears ${count} times`);
+				});
+			}
 
 			const annotations = results
 				.map((row: any) => ({
@@ -607,108 +626,23 @@ export class AppleBooksDatabase {
 	}
 
 	private static deduplicateAnnotations(annotations: Annotation[]): Annotation[] {
-		// Group annotations by similar text and location to detect splits/duplicates
-		const groups: { [key: string]: Annotation[] } = {};
-		
-		for (const annotation of annotations) {
-			// Create a key based on the first 50 characters and location
-			const textKey = annotation.selectedText.substring(0, 50).trim();
-			const locationKey = annotation.location || 'no-location';
-			const key = `${textKey}|${locationKey}`;
-			
-			if (!groups[key]) {
-				groups[key] = [];
-			}
-			groups[key].push(annotation);
-		}
-		
+		// Simple deduplication based on exact text and location matches
+		const seen = new Set<string>();
 		const result: Annotation[] = [];
 		
-		for (const [key, groupAnnotations] of Object.entries(groups)) {
-			if (groupAnnotations.length === 1) {
-				// Single annotation, keep as-is
-				result.push(groupAnnotations[0]);
+		for (const annotation of annotations) {
+			// Create a unique key based on exact text and location
+			const key = `${annotation.selectedText.trim()}|${annotation.location || 'no-location'}`;
+			
+			if (!seen.has(key)) {
+				seen.add(key);
+				result.push(annotation);
 			} else {
-				// Multiple annotations with similar text/location - check if they should be merged
-				console.log(`Found ${groupAnnotations.length} similar annotations for key: ${key}`);
-				
-				// Sort by physical location or creation date to get proper order
-				const sorted = groupAnnotations.sort((a, b) => {
-					if (a.physicalLocation && b.physicalLocation) {
-						return a.physicalLocation - b.physicalLocation;
-					}
-					if (a.creationDate && b.creationDate) {
-						return a.creationDate.getTime() - b.creationDate.getTime();
-					}
-					return 0;
-				});
-				
-				// Check if they're consecutive parts of the same highlight
-				const shouldMerge = this.shouldMergeAnnotations(sorted);
-				
-				if (shouldMerge) {
-					// Merge into single annotation
-					const merged = this.mergeAnnotations(sorted);
-					console.log('Merged annotations into single highlight');
-					result.push(merged);
-				} else {
-					// Keep as separate annotations
-					result.push(...sorted);
-				}
+				console.log('Removed duplicate annotation:', annotation.selectedText.substring(0, 50) + '...');
 			}
 		}
 		
 		return result;
-	}
-
-	private static shouldMergeAnnotations(annotations: Annotation[]): boolean {
-		if (annotations.length < 2) return false;
-		
-		// Check if annotations appear to be consecutive parts of the same highlight
-		for (let i = 0; i < annotations.length - 1; i++) {
-			const current = annotations[i];
-			const next = annotations[i + 1];
-			
-			// If text of current ends where next begins, they're likely split parts
-			const currentText = current.selectedText.trim();
-			const nextText = next.selectedText.trim();
-			
-			// Check if one text is a continuation of the other
-			if (currentText.length < 50 && nextText.length > 50) {
-				// Current is likely a fragment of next
-				return true;
-			}
-			
-			// Check if they have very similar physical locations (within 10 units)
-			if (current.physicalLocation && next.physicalLocation) {
-				const locationDiff = Math.abs(current.physicalLocation - next.physicalLocation);
-				if (locationDiff <= 10) {
-					return true;
-				}
-			}
-		}
-		
-		return false;
-	}
-
-	private static mergeAnnotations(annotations: Annotation[]): Annotation {
-		// Use the longest text as the base
-		const sortedByLength = [...annotations].sort((a, b) => b.selectedText.length - a.selectedText.length);
-		const base = sortedByLength[0];
-		
-		// Merge notes if any exist
-		const notes = annotations.map(a => a.note).filter(note => note && note.trim().length > 0);
-		const mergedNote = notes.length > 0 ? notes.join(' | ') : null;
-		
-		return {
-			...base,
-			note: mergedNote,
-			// Keep the earliest creation date if available
-			creationDate: annotations
-				.map(a => a.creationDate)
-				.filter(date => date !== null)
-				.sort((a, b) => (a?.getTime() || 0) - (b?.getTime() || 0))[0] || base.creationDate
-		};
 	}
 
 	static sortAnnotationsByCFI(annotations: Annotation[]): Annotation[] {
