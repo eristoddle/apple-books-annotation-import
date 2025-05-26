@@ -372,13 +372,15 @@ export class MarkdownGenerator {
 			}
 			content += '\n';
 
-			// Add citation with creation date if available
-			const citation = this.formatCitation(book, annotation.physicalLocation);
-			let citationLine = `*${citation}*`;
-			if (annotation.creationDate && settings.includeAnnotationDates) {
-				citationLine += ` *(Created: ${annotation.creationDate.toDateString()})*`;
+			// Add citation with creation date if available (only if enabled)
+			if (settings.includeCitations) {
+				const citation = this.formatCitation(book, annotation.physicalLocation);
+				let citationLine = `*${citation}*`;
+				if (annotation.creationDate && settings.includeAnnotationDates) {
+					citationLine += ` *(Created: ${annotation.creationDate.toDateString()})*`;
+				}
+				content += `${citationLine}\n\n`;
 			}
-			content += `${citationLine}\n\n`;
 
 			// Add note if present
 			if (annotation.note && annotation.note.trim().length > 0) {

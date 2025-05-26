@@ -17,6 +17,7 @@ export const DEFAULT_SETTINGS: AppleBooksImporterSettings = {
 	includeAnnotationStyles: true,
 	includeReadingProgress: true,
 	createAuthorPages: true,
+	includeCitations: false,
 };
 
 export class AppleBooksImporterSettingTab extends PluginSettingTab {
@@ -201,6 +202,19 @@ export class AppleBooksImporterSettingTab extends PluginSettingTab {
 					.setValue(this.plugin.settings.createAuthorPages)
 					.onChange(async (value) => {
 						this.plugin.settings.createAuthorPages = value;
+						await this.plugin.saveSettings();
+					})
+			);
+
+		// Include citations
+		new Setting(containerEl)
+			.setName("Include citations")
+			.setDesc("Include citation after each annotation with book title, author, and page location")
+			.addToggle((toggle) =>
+				toggle
+					.setValue(this.plugin.settings.includeCitations)
+					.onChange(async (value) => {
+						this.plugin.settings.includeCitations = value;
 						await this.plugin.saveSettings();
 					})
 			);
