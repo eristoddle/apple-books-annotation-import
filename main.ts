@@ -211,8 +211,11 @@ export default class AppleBooksImporterPlugin extends Plugin {
 		}
 
 		try {
-			// Ensure Authors folder exists
-			const authorsFolder = 'Authors';
+			// Determine the authors folder path - nested inside the books output folder
+			const outputFolder = this.settings.outputFolder.trim();
+			const authorsFolder = outputFolder ? `${outputFolder}/Authors` : 'Authors';
+			
+			// Ensure Authors folder exists (create parent folders if needed)
 			const authorsFolderExists = await this.app.vault.adapter.exists(authorsFolder);
 			if (!authorsFolderExists) {
 				await this.app.vault.createFolder(authorsFolder);
@@ -225,7 +228,7 @@ export default class AppleBooksImporterPlugin extends Plugin {
 
 			if (!authorFileExists) {
 				// Create author page with dataview query
-				const booksFolderPath = this.settings.outputFolder.trim() || '';
+				const booksFolderPath = outputFolder || '';
 				const searchPath = booksFolderPath ? `"${booksFolderPath}"` : '';
 				
 				const authorPageContent = `# ${authorName}

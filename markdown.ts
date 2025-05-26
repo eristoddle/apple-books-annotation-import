@@ -232,7 +232,10 @@ export class MarkdownGenerator {
 		content += `- **Title:** ${book.title}\n`;
 		if (book.author) {
 			if (settings.createAuthorPages) {
-				content += `- **Author:** [[Authors/${book.author}]]\n`;
+				// Create author link nested inside the output folder
+				const outputFolder = settings.outputFolder?.trim();
+				const authorPath = outputFolder ? `${outputFolder}/Authors/${book.author}` : `Authors/${book.author}`;
+				content += `- **Author:** [[${authorPath}]]\n`;
 			} else {
 				content += `- **Author:** ${book.author}\n`;
 			}
