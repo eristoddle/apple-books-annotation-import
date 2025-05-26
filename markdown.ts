@@ -357,17 +357,15 @@ export class MarkdownGenerator {
 			}
 
 			// Add the highlight as a blockquote with style indicator
-			const highlightLines = trimmedText.split('\n').map(line => line.trim()).filter(line => line.length > 0);
-			
-			if (highlightLines.length === 0) {
-				continue; // Skip if no valid lines
-			}
+			// DON'T trim individual lines - preserve original formatting including indentation
+			const highlightLines = trimmedText.split('\n');
 			
 			for (let i = 0; i < highlightLines.length; i++) {
+				const line = highlightLines[i];
 				if (i === 0) {
-					content += `> ${styleIndicator}${highlightLines[i]}\n`;
+					content += `> ${styleIndicator}${line}\n`;
 				} else {
-					content += `> ${highlightLines[i]}\n`;
+					content += `> ${line}\n`;
 				}
 			}
 			content += '\n';
