@@ -568,7 +568,14 @@ export class AppleBooksDatabase {
 			
 			console.log(`Found ${results.length} annotation rows for asset ${assetId}`);
 
-			return results
+			// Log the raw results to debug duplication issues
+			console.log('Raw annotation data sample:', results.slice(0, 3).map(row => ({
+				text: row.ZANNOTATIONSELECTEDTEXT?.substring(0, 50) + '...',
+				location: row.ZANNOTATIONLOCATION,
+				physicalLocation: row.ZPLABSOLUTEPHYSICALLOCATION
+			})));
+
+			const annotations = results
 				.map((row: any) => ({
 					selectedText: row.ZANNOTATIONSELECTEDTEXT || '',
 					note: row.ZANNOTATIONNOTE || null,
@@ -588,9 +595,120 @@ export class AppleBooksDatabase {
 					const trimmedText = annotation.selectedText.trim();
 					return trimmedText.length > 0 && trimmedText !== '';
 				});
+
+			// Check for potential duplicates based on text similarity and location
+			const deduplicated = this.deduplicateAnnotations(annotations);
+			console.log(`After deduplication: ${deduplicated.length} annotations (removed ${annotations.length - deduplicated.length} duplicates)`);
+
+			return deduplicated;
 		} catch (error: any) {
 			throw new Error(`Failed to get annotations for book ${assetId}: ${error?.message || 'Unknown error'}`);
 		}
+	}
+
+	private static deduplicateAnnotations(annotations: Annotation[]): Annotation[] {
+		// Group annotations by similar text and location to detect splits/duplicates
+		const groups: { [key: string]: Annotation[] } = {};
+		
+		for (const annotation of annotations) {
+			// Create a key based on the first 50 characters and location
+			const textKey = annotation.selectedText.substring(0, 50).trim();
+			const locationKey = annotation.location || 'no-location';
+			const key = `${textKey}|${locationKey}`;
+			
+			if (!groups[key]) {
+				groups[key] = [];
+			}
+			groups[key].push(annotation);
+		}
+		
+		const result: Annotation[] = [];
+		
+		for (const [key, groupAnnotations] of Object.entries(groups)) {
+			if (groupAnnotations.length === 1) {
+				// Single annotation, keep as-is
+				result.push(groupAnnotations[0]);
+			} else {
+				// Multiple annotations with similar text/location - check if they should be merged
+				console.log(`Found ${groupAnnotations.length} similar annotations for key: ${key}`);
+				
+				// Sort by physical location or creation date to get proper order
+				const sorted = groupAnnotations.sort((a, b) => {
+					if (a.physicalLocation && b.physicalLocation) {
+						return a.physicalLocation - b.physicalLocation;
+					}
+					if (a.creationDate && b.creationDate) {
+						return a.creationDate.getTime() - b.creationDate.getTime();
+					}
+					return 0;
+				});
+				
+				// Check if they're consecutive parts of the same highlight
+				const shouldMerge = this.shouldMergeAnnotations(sorted);
+				
+				if (shouldMerge) {
+					// Merge into single annotation
+					const merged = this.mergeAnnotations(sorted);
+					console.log('Merged annotations into single highlight');
+					result.push(merged);
+				} else {
+					// Keep as separate annotations
+					result.push(...sorted);
+				}
+			}
+		}
+		
+		return result;
+	}
+
+	private static shouldMergeAnnotations(annotations: Annotation[]): boolean {
+		if (annotations.length < 2) return false;
+		
+		// Check if annotations appear to be consecutive parts of the same highlight
+		for (let i = 0; i < annotations.length - 1; i++) {
+			const current = annotations[i];
+			const next = annotations[i + 1];
+			
+			// If text of current ends where next begins, they're likely split parts
+			const currentText = current.selectedText.trim();
+			const nextText = next.selectedText.trim();
+			
+			// Check if one text is a continuation of the other
+			if (currentText.length < 50 && nextText.length > 50) {
+				// Current is likely a fragment of next
+				return true;
+			}
+			
+			// Check if they have very similar physical locations (within 10 units)
+			if (current.physicalLocation && next.physicalLocation) {
+				const locationDiff = Math.abs(current.physicalLocation - next.physicalLocation);
+				if (locationDiff <= 10) {
+					return true;
+				}
+			}
+		}
+		
+		return false;
+	}
+
+	private static mergeAnnotations(annotations: Annotation[]): Annotation {
+		// Use the longest text as the base
+		const sortedByLength = [...annotations].sort((a, b) => b.selectedText.length - a.selectedText.length);
+		const base = sortedByLength[0];
+		
+		// Merge notes if any exist
+		const notes = annotations.map(a => a.note).filter(note => note && note.trim().length > 0);
+		const mergedNote = notes.length > 0 ? notes.join(' | ') : null;
+		
+		return {
+			...base,
+			note: mergedNote,
+			// Keep the earliest creation date if available
+			creationDate: annotations
+				.map(a => a.creationDate)
+				.filter(date => date !== null)
+				.sort((a, b) => (a?.getTime() || 0) - (b?.getTime() || 0))[0] || base.creationDate
+		};
 	}
 
 	static sortAnnotationsByCFI(annotations: Annotation[]): Annotation[] {
