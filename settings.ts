@@ -6,11 +6,12 @@ import { AppleBooksImporterSettings } from "./types";
 export const DEFAULT_SETTINGS: AppleBooksImporterSettings = {
 	outputFolder: "Books",
 	includeCovers: true,
-	includeMetadata: true,
+	includeExtendedFrontmatter: true,
+	includeExtendedInNote: true,
 	overwriteExisting: true,
 	addTags: true,
 	customTags: "book/notes",
-	includeChapterInfo: true,
+	includeChapterInfo: false,
 	sortAnnotations: true,
 	includeAnnotationDates: true,
 	includeAnnotationStyles: true,
@@ -60,15 +61,28 @@ export class AppleBooksImporterSettingTab extends PluginSettingTab {
 					})
 			);
 
-		// Include metadata setting
+		// Include extended metadata in frontmatter
 		new Setting(containerEl)
-			.setName("Include extended metadata")
-			.setDesc("Include detailed metadata like ISBN, publisher, publication date")
+			.setName("Include extended metadata in frontmatter")
+			.setDesc("Include detailed metadata like ISBN, publisher, publication date in YAML frontmatter")
 			.addToggle((toggle) =>
 				toggle
-					.setValue(this.plugin.settings.includeMetadata)
+					.setValue(this.plugin.settings.includeExtendedFrontmatter)
 					.onChange(async (value) => {
-						this.plugin.settings.includeMetadata = value;
+						this.plugin.settings.includeExtendedFrontmatter = value;
+						await this.plugin.saveSettings();
+					})
+			);
+
+		// Include extended metadata in note body
+		new Setting(containerEl)
+			.setName("Include extended metadata in note")
+			.setDesc("Include detailed metadata section in the note body")
+			.addToggle((toggle) =>
+				toggle
+					.setValue(this.plugin.settings.includeExtendedInNote)
+					.onChange(async (value) => {
+						this.plugin.settings.includeExtendedInNote = value;
 						await this.plugin.saveSettings();
 					})
 			);
@@ -116,7 +130,7 @@ export class AppleBooksImporterSettingTab extends PluginSettingTab {
 		// Include chapter info
 		new Setting(containerEl)
 			.setName("Include chapter information")
-			.setDesc("Try to extract chapter information from annotation locations")
+			.setDesc("Try to extract chapter information from annotation locations (sometimes the result is not human readable)")
 			.addToggle((toggle) =>
 				toggle
 					.setValue(this.plugin.settings.includeChapterInfo)

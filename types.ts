@@ -50,7 +50,8 @@ export interface BookWithAnnotations {
 export interface AppleBooksImporterSettings {
 	outputFolder: string;
 	includeCovers: boolean;
-	includeMetadata: boolean;
+	includeExtendedFrontmatter: boolean;
+	includeExtendedInNote: boolean;
 	overwriteExisting: boolean;
 	addTags: boolean;
 	customTags: string;

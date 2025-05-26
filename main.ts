@@ -107,7 +107,7 @@ export default class AppleBooksImporterPlugin extends Plugin {
 
 					// Extract additional metadata from EPUB if available
 					let enrichedBook = book;
-					if (book.path && (this.settings.includeCovers || this.settings.includeMetadata)) {
+					if (book.path && (this.settings.includeCovers || this.settings.includeExtendedFrontmatter || this.settings.includeExtendedInNote)) {
 						try {
 							const epubMetadata = await AppleBooksDatabase.getEpubMetadata(book.path);
 							if (epubMetadata) {

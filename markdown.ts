@@ -146,8 +146,8 @@ export class MarkdownGenerator {
 			content += `author: ${this.sanitizeFrontmatter(book.author)}\n`;
 		}
 
-		// Extended metadata if enabled - include all fields like Python version
-		if (settings.includeMetadata) {
+		// Extended metadata in frontmatter if enabled
+		if (settings.includeExtendedFrontmatter) {
 			if (book.description) {
 				content += `description: ${this.sanitizeFrontmatter(book.description)}\n`;
 			}
@@ -222,71 +222,91 @@ export class MarkdownGenerator {
 			content += '</p>\n\n';
 		}
 
-		// Metadata section - include all fields like Python version
-		content += '## Metadata\n\n';
-		
-		// Include all metadata fields with bold, title-case formatting
-		if (book.assetId) {
-			content += `- **Asset ID:** ${book.assetId}\n`;
-		}
-		content += `- **Title:** ${book.title}\n`;
-		if (book.author) {
-			if (settings.createAuthorPages) {
-				// Create author link nested inside the output folder
-				const outputFolder = settings.outputFolder?.trim();
-				const authorPath = outputFolder ? `${outputFolder}/Authors/${book.author}` : `Authors/${book.author}`;
-				content += `- **Author:** [[${authorPath}]]\n`;
-			} else {
-				content += `- **Author:** ${book.author}\n`;
+		// Check if we should include metadata section in note body
+		const shouldIncludeMetadataSection = settings.includeExtendedInNote || 
+			(book.author && settings.createAuthorPages) ||
+			(settings.addTags && settings.customTags);
+
+		if (shouldIncludeMetadataSection) {
+			// Metadata section - only if we have content to show
+			content += '## Metadata\n\n';
+			
+			// Always include core fields if we're showing metadata section
+			if (book.assetId && settings.includeExtendedInNote) {
+				content += `- **Asset ID:** ${book.assetId}\n`;
 			}
-		}
-		if (book.description && settings.includeMetadata) {
-			content += `- **Description:** ${book.description}\n`;
-		}
-		if (book.epubId && settings.includeMetadata) {
-			content += `- **EPUB ID:** ${book.epubId}\n`;
-		}
-		if (book.path && settings.includeMetadata) {
-			content += `- **Path:** [${book.path}](file://${book.path})\n`;
-		}
-		if (book.isbn && settings.includeMetadata) {
-			content += `- **ISBN:** ${book.isbn}\n`;
-		}
-		if (book.language && settings.includeMetadata) {
-			content += `- **Language:** ${book.language}\n`;
-		}
-		if (book.publisher && settings.includeMetadata) {
-			content += `- **Publisher:** ${book.publisher}\n`;
-		}
-		if (book.publicationDate && settings.includeMetadata) {
-			content += `- **Publication Date:** ${book.publicationDate}\n`;
-		}
-		
-		if (settings.includeMetadata) {
-			if (book.year && book.year !== book.publicationDate) content += `- **Year:** ${book.year}\n`;
-			if (book.genre) content += `- **Genre:** ${book.genre}\n`;
-			if (book.pageCount) content += `- **Page Count:** ${book.pageCount}\n`;
-			if (book.rating && book.rating > 0) content += `- **Rating:** ${book.rating}/5 ⭐\n`;
-			if (book.readingProgress !== null && book.readingProgress > 0) {
-				content += `- **Reading Progress:** ${Math.round(book.readingProgress * 100)}%\n`;
+			content += `- **Title:** ${book.title}\n`;
+			if (book.author) {
+				if (settings.createAuthorPages) {
+					// Create author link nested inside the output folder
+					const outputFolder = settings.outputFolder?.trim();
+					const authorPath = outputFolder ? `${outputFolder}/Authors/${book.author}` : `Authors/${book.author}`;
+					content += `- **Author:** [[${authorPath}]]\n`;
+				} else {
+					content += `- **Author:** ${book.author}\n`;
+				}
 			}
-			if (book.subjects && book.subjects.length > 0) {
-				content += `- **Subjects:** ${book.subjects.join(', ')}\n`;
+			
+			// Extended metadata in note body only if enabled
+			if (settings.includeExtendedInNote) {
+				if (book.description) {
+					content += `- **Description:** ${book.description}\n`;
+				}
+				if (book.epubId) {
+					content += `- **EPUB ID:** ${book.epubId}\n`;
+				}
+				if (book.path) {
+					content += `- **Path:** [${book.path}](file://${book.path})\n`;
+				}
+				if (book.isbn) {
+					content += `- **ISBN:** ${book.isbn}\n`;
+				}
+				if (book.language) {
+					content += `- **Language:** ${book.language}\n`;
+				}
+				if (book.publisher) {
+					content += `- **Publisher:** ${book.publisher}\n`;
+				}
+				if (book.publicationDate) {
+					content += `- **Publication Date:** ${book.publicationDate}\n`;
+				}
+				if (book.year && book.year !== book.publicationDate) {
+					content += `- **Year:** ${book.year}\n`;
+				}
+				if (book.genre) {
+					content += `- **Genre:** ${book.genre}\n`;
+				}
+				if (book.pageCount) {
+					content += `- **Page Count:** ${book.pageCount}\n`;
+				}
+				if (book.rating && book.rating > 0) {
+					content += `- **Rating:** ${book.rating}/5 ⭐\n`;
+				}
+				if (book.readingProgress !== null && book.readingProgress > 0) {
+					content += `- **Reading Progress:** ${Math.round(book.readingProgress * 100)}%\n`;
+				}
+				if (book.subjects && book.subjects.length > 0) {
+					content += `- **Subjects:** ${book.subjects.join(', ')}\n`;
+				}
+				if (book.rights) {
+					content += `- **Rights:** ${book.rights}\n`;
+				}
+				if (book.lastOpenDate) {
+					content += `- **Last Opened:** ${book.lastOpenDate.toDateString()}\n`;
+				}
+				if (book.comments) {
+					content += `- **Comments:** ${book.comments}\n`;
+				}
 			}
-			if (book.rights) content += `- **Rights:** ${book.rights}\n`;
-			if (book.lastOpenDate) {
-				content += `- **Last Opened:** ${book.lastOpenDate.toDateString()}\n`;
+
+			if (settings.addTags && settings.customTags) {
+				content += `- **Tags:** ${settings.customTags}\n`;
 			}
-			if (book.comments) {
-				content += `- **Comments:** ${book.comments}\n`;
-			}
+
+			content += '\n';
 		}
 
-		if (settings.addTags && settings.customTags) {
-			content += `- **Tags:** ${settings.customTags}\n`;
-		}
-
-		content += '\n## Annotations\n\n';
+		content += '## Annotations\n\n';
 
 		// Process annotations
 		let currentChapter: string | null = null;
