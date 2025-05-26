@@ -11,7 +11,7 @@ export interface BookDetail {
 	publisher: string | null;
 	publicationDate: string | null;
 	cover: string | null;
-	// Additional fields from database
+	// Additional fields from database (may be null if not available in this database version)
 	genre: string | null;
 	genres: string | null; // BLOB field for multiple genres
 	year: string | null;
@@ -22,7 +22,7 @@ export interface BookDetail {
 	creationDate: Date | null;
 	lastOpenDate: Date | null;
 	modificationDate: Date | null;
-	// Enhanced metadata
+	// Enhanced metadata from EPUB
 	rights: string | null;
 	subjects: string[] | null;
 }
@@ -32,7 +32,7 @@ export interface Annotation {
 	note: string | null;
 	location: string | null;
 	physicalLocation: number | null;
-	// Additional fields from database
+	// Additional fields from database (may be null if not available)
 	annotationType: number | null;
 	annotationStyle: number | null;
 	isUnderline: boolean;

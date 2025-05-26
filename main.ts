@@ -143,7 +143,7 @@ export default class AppleBooksImporterPlugin extends Plugin {
 					await this.createBookNote(fileName, markdownContent);
 
 					// Create author page if needed
-					if (enrichedBook.author) {
+					if (enrichedBook.author && this.settings.createAuthorPages) {
 						await this.createAuthorPageIfNeeded(enrichedBook.author);
 					}
 

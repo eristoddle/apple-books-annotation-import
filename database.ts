@@ -361,16 +361,51 @@ export class AppleBooksDatabase {
 		}
 	}
 
+	private static async getAvailableColumns(dbPath: string, tableName: string): Promise<string[]> {
+		try {
+			const query = `PRAGMA table_info(${tableName});`;
+			const results = await this.executeSqlQueryWithHeaders(dbPath, query);
+			const columns = results.map((row: any) => row.name);
+			console.log(`Found ${columns.length} columns in ${tableName}:`, columns);
+			return columns;
+		} catch (error: any) {
+			console.warn('Could not get table info, falling back to basic columns:', error.message);
+			// Return the minimal set of columns that should exist in all versions
+			return ['ZASSETID', 'ZSORTTITLE', 'ZSORTAUTHOR', 'ZBOOKDESCRIPTION', 'ZEPUBID', 'ZPATH'];
+		}
+	}
+
 	static async getBookDetails(): Promise<BookDetail[]> {
 		try {
 			const dbPath = this.getDbPath(LIBRARY_DB_PATTERN);
 			console.log('Opening library database:', dbPath);
 
-			const query = `SELECT 
-				ZASSETID, ZSORTTITLE, ZSORTAUTHOR, ZBOOKDESCRIPTION, ZEPUBID, ZPATH,
-				ZGENRE, ZGENRES, ZYEAR, ZPAGECOUNT, ZRATING, ZCOMMENTS, ZLANGUAGE,
-				ZREADINGPROGRESS, ZCREATIONDATE, ZLASTOPENDATE, ZMODIFICATIONDATE
-				FROM ZBKLIBRARYASSET;`;
+			// Get available columns first to avoid errors on different database versions
+			const availableColumns = await this.getAvailableColumns(dbPath, 'ZBKLIBRARYASSET');
+			console.log('Available columns in ZBKLIBRARYASSET:', availableColumns);
+
+			// Define basic required columns that should exist in all versions
+			const basicColumns = ['ZASSETID', 'ZSORTTITLE', 'ZSORTAUTHOR', 'ZBOOKDESCRIPTION', 'ZEPUBID', 'ZPATH'];
+			
+			// Define optional extended columns that may not exist in all database versions
+			const extendedColumns = [
+				'ZGENRE', 'ZGENRES', 'ZYEAR', 'ZPAGECOUNT', 'ZRATING', 'ZCOMMENTS', 
+				'ZLANGUAGE', 'ZREADINGPROGRESS', 'ZCREATIONDATE', 'ZLASTOPENDATE', 'ZMODIFICATIONDATE'
+			];
+
+			// Build query with available columns only
+			const columnsToSelect = basicColumns.filter(col => availableColumns.includes(col));
+			const availableExtended = extendedColumns.filter(col => availableColumns.includes(col));
+			const allColumns = [...columnsToSelect, ...availableExtended];
+
+			// Make sure we at least have the essential columns
+			if (!columnsToSelect.includes('ZASSETID')) {
+				throw new Error('Database schema incompatible: missing required ZASSETID column');
+			}
+
+			console.log('Querying columns:', allColumns);
+
+			const query = `SELECT ${allColumns.join(', ')} FROM ZBKLIBRARYASSET;`;
 			const results = await this.executeSqlQueryWithHeaders(dbPath, query);
 
 			console.log('Library rows found:', results.length);
@@ -387,7 +422,7 @@ export class AppleBooksDatabase {
 				publisher: null, // Will be populated from EPUB metadata if available
 				publicationDate: null, // Will be populated from EPUB metadata if available
 				cover: null,
-				// Additional database fields
+				// Extended fields (will be null if columns don't exist in this database version)
 				genre: row.ZGENRE || null,
 				genres: row.ZGENRES || null,
 				year: row.ZYEAR || null,
@@ -459,8 +494,26 @@ export class AppleBooksDatabase {
 		try {
 			const dbPath = this.getDbPath(ANNOTATION_DB_PATTERN);
 
-			// Use the EXACT same query as the working Python script
-			const query = `SELECT ZANNOTATIONSELECTEDTEXT, ZANNOTATIONNOTE, ZANNOTATIONLOCATION, ZPLABSOLUTEPHYSICALLOCATION FROM ZAEANNOTATION WHERE ZANNOTATIONASSETID = '${assetId}' AND ZANNOTATIONSELECTEDTEXT != '';`;
+			// Get available columns in annotation table
+			const availableColumns = await this.getAvailableColumns(dbPath, 'ZAEANNOTATION');
+			
+			// Basic columns that should exist in all versions
+			const basicAnnotationColumns = ['ZANNOTATIONSELECTEDTEXT', 'ZANNOTATIONNOTE', 'ZANNOTATIONLOCATION', 'ZPLABSOLUTEPHYSICALLOCATION'];
+			
+			// Extended columns that may not exist in all versions
+			const extendedAnnotationColumns = [
+				'ZANNOTATIONTYPE', 'ZANNOTATIONSTYLE', 'ZANNOTATIONISUNDERLINE', 
+				'ZCREATIONDATE', 'ZMODIFICATIONDATE', 'ZANNOTATIONUUID', 'ZANNOTATIONREPRESENTATIVETEXT'
+			];
+
+			// Build query with available columns
+			const availableBasic = basicAnnotationColumns.filter(col => availableColumns.includes(col));
+			const availableExtended = extendedAnnotationColumns.filter(col => availableColumns.includes(col));
+			const queryColumns = [...availableBasic, ...availableExtended];
+
+			console.log('Querying annotation columns:', queryColumns);
+
+			const query = `SELECT ${queryColumns.join(', ')} FROM ZAEANNOTATION WHERE ZANNOTATIONASSETID = '${assetId}' AND ZANNOTATIONSELECTEDTEXT != '';`;
 
 			const results = await this.executeSqlQueryWithHeaders(dbPath, query);
 			
@@ -472,14 +525,14 @@ export class AppleBooksDatabase {
 					note: row.ZANNOTATIONNOTE || null,
 					location: row.ZANNOTATIONLOCATION || null,
 					physicalLocation: row.ZPLABSOLUTEPHYSICALLOCATION ? parseInt(row.ZPLABSOLUTEPHYSICALLOCATION) : null,
-					// Set default values for fields we're not querying (to match the interface)
-					annotationType: null,
-					annotationStyle: null,
-					isUnderline: false,
-					creationDate: null,
-					modificationDate: null,
-					uuid: null,
-					representativeText: null,
+					// Extended fields (will be null if columns don't exist)
+					annotationType: row.ZANNOTATIONTYPE ? parseInt(row.ZANNOTATIONTYPE) : null,
+					annotationStyle: row.ZANNOTATIONSTYLE ? parseInt(row.ZANNOTATIONSTYLE) : null,
+					isUnderline: row.ZANNOTATIONISUNDERLINE ? Boolean(row.ZANNOTATIONISUNDERLINE) : false,
+					creationDate: row.ZCREATIONDATE ? new Date(row.ZCREATIONDATE * 1000 + Date.UTC(2001, 0, 1)) : null,
+					modificationDate: row.ZMODIFICATIONDATE ? new Date(row.ZMODIFICATIONDATE * 1000 + Date.UTC(2001, 0, 1)) : null,
+					uuid: row.ZANNOTATIONUUID || null,
+					representativeText: row.ZANNOTATIONREPRESENTATIVETEXT || null,
 				}))
 				.filter(annotation => {
 					// Filter out annotations with empty or whitespace-only text

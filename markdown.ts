@@ -185,7 +185,7 @@ export class MarkdownGenerator {
 				content += `reading_progress: ${Math.round(book.readingProgress * 100)}%\n`;
 			}
 			if (book.subjects && book.subjects.length > 0) {
-				content += `subjects: [${book.subjects.map(s => `"${this.sanitizeFrontmatter(s)}"`).join(', ')}]\n`;
+				content += `subjects: [${book.subjects.map((s: string) => `"${this.sanitizeFrontmatter(s)}"`).join(', ')}]\n`;
 			}
 			if (book.rights) {
 				content += `rights: ${this.sanitizeFrontmatter(book.rights)}\n`;
@@ -225,7 +225,7 @@ export class MarkdownGenerator {
 		// Metadata section - include all fields like Python version
 		content += '## Metadata\n\n';
 		
-		// Include all metadata fields like Python version
+		// Include all metadata fields with bold, title-case formatting
 		if (book.assetId) {
 			content += `- **Asset ID:** ${book.assetId}\n`;
 		}
@@ -262,7 +262,7 @@ export class MarkdownGenerator {
 		if (settings.includeMetadata) {
 			if (book.year && book.year !== book.publicationDate) content += `- **Year:** ${book.year}\n`;
 			if (book.genre) content += `- **Genre:** ${book.genre}\n`;
-			if (book.pageCount) content += `- **Pages:** ${book.pageCount}\n`;
+			if (book.pageCount) content += `- **Page Count:** ${book.pageCount}\n`;
 			if (book.rating && book.rating > 0) content += `- **Rating:** ${book.rating}/5 ⭐\n`;
 			if (book.readingProgress !== null && book.readingProgress > 0) {
 				content += `- **Reading Progress:** ${Math.round(book.readingProgress * 100)}%\n`;
