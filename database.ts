@@ -550,6 +550,17 @@ export class AppleBooksDatabase {
 			
 			console.log(`Found ${results.length} annotation rows for asset ${assetId}`);
 
+			// Debug: Log the first few annotations to see exactly what's in the database
+			console.log('\n=== RAW DATABASE RESULTS ===');
+			results.slice(0, 8).forEach((row, i) => {
+				console.log(`Row ${i}:`);
+				console.log(`  Text: "${row.ZANNOTATIONSELECTEDTEXT}"`);
+				console.log(`  Location: ${row.ZANNOTATIONLOCATION}`);
+				console.log(`  Physical: ${row.ZPLABSOLUTEPHYSICALLOCATION}`);
+				console.log('');
+			});
+			console.log('=== END RAW RESULTS ===\n');
+
 			return results
 				.map((row: any) => ({
 					selectedText: row.ZANNOTATIONSELECTEDTEXT || '',
