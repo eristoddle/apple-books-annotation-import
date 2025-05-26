@@ -543,245 +543,39 @@ export class AppleBooksDatabase {
 		try {
 			const dbPath = this.getDbPath(ANNOTATION_DB_PATTERN);
 
-			// Get available columns in annotation table
-			const availableColumns = await this.getAvailableColumns(dbPath, 'ZAEANNOTATION');
-			
-			// Basic columns that should exist in all versions
-			const basicAnnotationColumns = ['ZANNOTATIONSELECTEDTEXT', 'ZANNOTATIONNOTE', 'ZANNOTATIONLOCATION', 'ZPLABSOLUTEPHYSICALLOCATION'];
-			
-			// Extended columns that may not exist in all versions
-			const extendedAnnotationColumns = [
-				'ZANNOTATIONTYPE', 'ZANNOTATIONSTYLE', 'ZANNOTATIONISUNDERLINE', 
-				'ZCREATIONDATE', 'ZMODIFICATIONDATE', 'ZANNOTATIONUUID', 'ZANNOTATIONREPRESENTATIVETEXT'
-			];
-
-			// Build query with available columns
-			const availableBasic = basicAnnotationColumns.filter(col => availableColumns.includes(col));
-			const availableExtended = extendedAnnotationColumns.filter(col => availableColumns.includes(col));
-			const queryColumns = [...availableBasic, ...availableExtended];
-
-			console.log('Querying annotation columns:', queryColumns);
-
-			const query = `SELECT DISTINCT ${queryColumns.join(', ')} FROM ZAEANNOTATION WHERE ZANNOTATIONASSETID = '${assetId}' AND ZANNOTATIONSELECTEDTEXT != '';`;
+			// Use EXACT same query as Python script - just the basic 4 columns
+			const query = `SELECT ZANNOTATIONSELECTEDTEXT, ZANNOTATIONNOTE, ZANNOTATIONLOCATION, ZPLABSOLUTEPHYSICALLOCATION FROM ZAEANNOTATION WHERE ZANNOTATIONASSETID = '${assetId}' AND ZANNOTATIONSELECTEDTEXT != '';`;
 
 			const results = await this.executeSqlQueryWithHeaders(dbPath, query);
 			
 			console.log(`Found ${results.length} annotation rows for asset ${assetId}`);
 
-			// Enhanced logging to investigate line break and grouping issues
-			console.log('\n=== ANNOTATION DEBUG INFO ===');
-			console.log(`Total raw results: ${results.length}`);
-			
-			// Log detailed info about each annotation
-			results.slice(0, 10).forEach((row, index) => {
-				const text = row.ZANNOTATIONSELECTEDTEXT || '';
-				console.log(`\nAnnotation ${index}:`);
-				console.log(`  Text (first 100 chars): "${text.substring(0, 100)}"`);
-				console.log(`  Text length: ${text.length}`);
-				console.log(`  Has newlines: ${text.includes('\n')}`);
-				console.log(`  Has carriage returns: ${text.includes('\r')}`);
-				console.log(`  Location: ${row.ZANNOTATIONLOCATION}`);
-				console.log(`  Physical location: ${row.ZPLABSOLUTEPHYSICALLOCATION}`);
-				
-				// Show line break positions
-				const newlinePositions = [];
-				for (let i = 0; i < text.length; i++) {
-					if (text[i] === '\n') newlinePositions.push(i);
-				}
-				if (newlinePositions.length > 0) {
-					console.log(`  Newline positions: [${newlinePositions.join(', ')}]`);
-				}
-			});
-
-			// Check for annotations with similar locations that might need grouping
-			const locationGroups = new Map<string, any[]>();
-			for (const row of results) {
-				const locationKey = this.getLocationGroupKey(row.ZANNOTATIONLOCATION, row.ZPLABSOLUTEPHYSICALLOCATION);
-				if (!locationGroups.has(locationKey)) {
-					locationGroups.set(locationKey, []);
-				}
-				locationGroups.get(locationKey)!.push(row);
-			}
-
-			console.log('\n=== LOCATION GROUPING ANALYSIS ===');
-			for (const [locationKey, group] of locationGroups.entries()) {
-				if (group.length > 1) {
-					console.log(`\nLocation group "${locationKey}" has ${group.length} annotations:`);
-					group.forEach((row, i) => {
-						console.log(`  ${i}: "${(row.ZANNOTATIONSELECTEDTEXT || '').substring(0, 60)}..."`);
-					});
-				}
-			}
-			console.log('=== END DEBUG INFO ===\n');
-
-			const annotations = results
+			return results
 				.map((row: any) => ({
 					selectedText: row.ZANNOTATIONSELECTEDTEXT || '',
 					note: row.ZANNOTATIONNOTE || null,
 					location: row.ZANNOTATIONLOCATION || null,
 					physicalLocation: row.ZPLABSOLUTEPHYSICALLOCATION ? parseInt(row.ZPLABSOLUTEPHYSICALLOCATION) : null,
-					// Extended fields (will be null if columns don't exist)
-					annotationType: row.ZANNOTATIONTYPE ? parseInt(row.ZANNOTATIONTYPE) : null,
-					annotationStyle: row.ZANNOTATIONSTYLE ? parseInt(row.ZANNOTATIONSTYLE) : null,
-					isUnderline: row.ZANNOTATIONISUNDERLINE ? Boolean(row.ZANNOTATIONISUNDERLINE) : false,
-					creationDate: row.ZCREATIONDATE ? new Date(row.ZCREATIONDATE * 1000 + Date.UTC(2001, 0, 1)) : null,
-					modificationDate: row.ZMODIFICATIONDATE ? new Date(row.ZMODIFICATIONDATE * 1000 + Date.UTC(2001, 0, 1)) : null,
-					uuid: row.ZANNOTATIONUUID || null,
-					representativeText: row.ZANNOTATIONREPRESENTATIVETEXT || null,
+					// Set defaults for extended fields to match interface
+					annotationType: null,
+					annotationStyle: null,
+					isUnderline: false,
+					creationDate: null,
+					modificationDate: null,
+					uuid: null,
+					representativeText: null,
 				}))
 				.filter(annotation => {
 					// Filter out annotations with empty or whitespace-only text
 					const trimmedText = annotation.selectedText.trim();
 					return trimmedText.length > 0 && trimmedText !== '';
 				});
-
-			// First group related annotations that might belong together
-			const grouped = this.groupRelatedAnnotations(annotations);
-			console.log(`After grouping: ${grouped.length} annotations (combined ${annotations.length - grouped.length} fragments)`);
-
-			// Then remove exact duplicates
-			const deduplicated = this.deduplicateAnnotations(grouped);
-			console.log(`After deduplication: ${deduplicated.length} annotations (removed ${grouped.length - deduplicated.length} duplicates)`);
-
-			return deduplicated;
 		} catch (error: any) {
 			throw new Error(`Failed to get annotations for book ${assetId}: ${error?.message || 'Unknown error'}`);
 		}
 	}
 
-	private static getLocationGroupKey(cfiLocation: string, physicalLocation: number): string {
-		// Create a grouping key for annotations that might belong together
-		if (physicalLocation) {
-			// Group by physical location with some tolerance (within 5 units)
-			const groupedPhysical = Math.floor(physicalLocation / 5) * 5;
-			return `physical_${groupedPhysical}`;
-		}
-		
-		if (cfiLocation) {
-			// For CFI, extract the main chapter/section part
-			const cfiMatch = cfiLocation.match(/epubcfi\(([^!]+)/);
-			if (cfiMatch) {
-				return `cfi_${cfiMatch[1]}`;
-			}
-		}
-		
-		return 'unknown';
-	}
 
-	private static groupRelatedAnnotations(annotations: Annotation[]): Annotation[] {
-		// Group annotations that are likely parts of the same highlight
-		const groups = new Map<string, Annotation[]>();
-		
-		for (const annotation of annotations) {
-			const groupKey = this.getLocationGroupKey(annotation.location || '', annotation.physicalLocation || 0);
-			if (!groups.has(groupKey)) {
-				groups.set(groupKey, []);
-			}
-			groups.get(groupKey)!.push(annotation);
-		}
-
-		const result: Annotation[] = [];
-		
-		for (const [groupKey, groupAnnotations] of groups.entries()) {
-			if (groupAnnotations.length === 1) {
-				// Single annotation in group
-				result.push(groupAnnotations[0]);
-			} else {
-				// Multiple annotations - check if they should be combined
-				console.log(`\nAnalyzing group "${groupKey}" with ${groupAnnotations.length} annotations`);
-				
-				// Sort by physical location or creation date
-				const sorted = groupAnnotations.sort((a, b) => {
-					if (a.physicalLocation && b.physicalLocation) {
-						return a.physicalLocation - b.physicalLocation;
-					}
-					if (a.creationDate && b.creationDate) {
-						return a.creationDate.getTime() - b.creationDate.getTime();
-					}
-					return 0;
-				});
-
-				// Check if these should be combined into one annotation
-				if (this.shouldCombineAnnotations(sorted)) {
-					const combined = this.combineAnnotations(sorted);
-					console.log(`Combined ${sorted.length} annotations into one`);
-					result.push(combined);
-				} else {
-					console.log(`Keeping ${sorted.length} annotations separate`);
-					result.push(...sorted);
-				}
-			}
-		}
-
-		return result;
-	}
-
-	private static shouldCombineAnnotations(annotations: Annotation[]): boolean {
-		if (annotations.length < 2) return false;
-
-		// Check physical locations - if they're very close, likely same highlight
-		let hasCloseLocations = false;
-		for (let i = 0; i < annotations.length - 1; i++) {
-			const curr = annotations[i].physicalLocation;
-			const next = annotations[i + 1].physicalLocation;
-			if (curr && next && Math.abs(curr - next) <= 3) {
-				hasCloseLocations = true;
-				break;
-			}
-		}
-
-		// Check text patterns - if texts are short and seem like fragments
-		const avgLength = annotations.reduce((sum, a) => sum + a.selectedText.length, 0) / annotations.length;
-		const hasShortFragments = avgLength < 100; // Average less than 100 chars suggests fragments
-
-		// Check if any text contains line breaks that might indicate continuation
-		const hasMultiLineStructure = annotations.some(a => a.selectedText.includes('\n') || a.selectedText.includes(':'));
-
-		console.log(`  Close locations: ${hasCloseLocations}, Short fragments: ${hasShortFragments}, Multi-line structure: ${hasMultiLineStructure}`);
-
-		return hasCloseLocations && (hasShortFragments || hasMultiLineStructure);
-	}
-
-	private static combineAnnotations(annotations: Annotation[]): Annotation {
-		// Combine texts with appropriate spacing
-		const combinedText = annotations
-			.map(a => a.selectedText.trim())
-			.join(' ')
-			.replace(/\s+/g, ' ') // Normalize whitespace
-			.trim();
-
-		// Use the first annotation as base and update the text
-		const base = annotations[0];
-		return {
-			...base,
-			selectedText: combinedText,
-			// Combine notes if any
-			note: annotations
-				.map(a => a.note)
-				.filter(note => note && note.trim().length > 0)
-				.join(' | ') || base.note
-		};
-	}
-
-	private static deduplicateAnnotations(annotations: Annotation[]): Annotation[] {
-		// Simple deduplication based on exact text and location matches
-		const seen = new Set<string>();
-		const result: Annotation[] = [];
-		
-		for (const annotation of annotations) {
-			// Create a unique key based on exact text and location
-			const key = `${annotation.selectedText.trim()}|${annotation.location || 'no-location'}`;
-			
-			if (!seen.has(key)) {
-				seen.add(key);
-				result.push(annotation);
-			} else {
-				console.log('Removed duplicate annotation:', annotation.selectedText.substring(0, 50) + '...');
-			}
-		}
-		
-		return result;
-	}
 
 	static sortAnnotationsByCFI(annotations: Annotation[]): Annotation[] {
 		// Use the EXACT same approach as the working Python script
