@@ -1,7 +1,7 @@
 {
 	"id": "apple-books-annotation-import",
 	"name": "Apple Books Annotation Import",
-	"version": "1.0.13",
+	"version": "1.0.14",
 	"minAppVersion": "0.15.0",
 	"description": "Import highlights and notes from Apple Books app into Obsidian. Extracts annotations from macOS Books SQLite databases and creates formatted markdown notes.",
 	"author": "Stephan Miller",
