@@ -283,7 +283,7 @@ export class AppleBooksDatabase {
 		}
 	}
 
-	private static async executeSqlQueryWithHeaders(dbPath: string, query: string): Promise<any[]> {
+	private static async executeSqlQueryWithHeaders(dbPath: string, query: string, options?: { maxBuffer?: number }): Promise<any[]> {
 		try {
 			// Clean up the query - remove extra whitespace and newlines
 			const cleanQuery = query.replace(/\s+/g, ' ').trim();
@@ -292,7 +292,9 @@ export class AppleBooksDatabase {
 			const command = `sqlite3 -header "${dbPath}" "${cleanQuery.replace(/"/g, '""')}"`;
 			console.log('Executing SQLite command with headers:', command);
 			
-			const { stdout, stderr } = await execAsync(command);
+			// Increase buffer size for large libraries (default is ~1MB, we'll use 50MB)
+			const maxBuffer = options?.maxBuffer || 50 * 1024 * 1024; // 50MB
+			const { stdout, stderr } = await execAsync(command, { maxBuffer });
 			
 			if (stderr) {
 				console.warn('SQLite stderr:', stderr);
@@ -405,42 +407,89 @@ export class AppleBooksDatabase {
 
 			console.log('Querying columns:', allColumns);
 
-			const query = `SELECT ${allColumns.join(', ')} FROM ZBKLIBRARYASSET;`;
-			const results = await this.executeSqlQueryWithHeaders(dbPath, query);
+			try {
+				// First try with increased buffer
+				const query = `SELECT ${allColumns.join(', ')} FROM ZBKLIBRARYASSET;`;
+				const results = await this.executeSqlQueryWithHeaders(dbPath, query, { maxBuffer: 50 * 1024 * 1024 });
 
-			console.log('Library rows found:', results.length);
-			
-			return results.map((row: any) => ({
-				assetId: row.ZASSETID,
-				title: row.ZSORTTITLE || 'Unknown Title',
-				author: row.ZSORTAUTHOR || null,
-				description: row.ZBOOKDESCRIPTION || null,
-				epubId: row.ZEPUBID || null,
-				path: row.ZPATH || null,
-				isbn: null, // Will be populated from EPUB metadata if available
-				language: row.ZLANGUAGE || null,
-				publisher: null, // Will be populated from EPUB metadata if available
-				publicationDate: null, // Will be populated from EPUB metadata if available
-				cover: null,
-				// Extended fields (will be null if columns don't exist in this database version)
-				genre: row.ZGENRE || null,
-				genres: row.ZGENRES || null,
-				year: row.ZYEAR || null,
-				pageCount: (row.ZPAGECOUNT && parseInt(row.ZPAGECOUNT) > 1) ? parseInt(row.ZPAGECOUNT) : null,
-				rating: row.ZRATING ? parseInt(row.ZRATING) : null,
-				comments: row.ZCOMMENTS || null,
-				readingProgress: row.ZREADINGPROGRESS ? parseFloat(row.ZREADINGPROGRESS) : null,
-				creationDate: row.ZCREATIONDATE ? new Date(row.ZCREATIONDATE * 1000 + Date.UTC(2001, 0, 1)) : null,
-				lastOpenDate: row.ZLASTOPENDATE ? new Date(row.ZLASTOPENDATE * 1000 + Date.UTC(2001, 0, 1)) : null,
-				modificationDate: row.ZMODIFICATIONDATE ? new Date(row.ZMODIFICATIONDATE * 1000 + Date.UTC(2001, 0, 1)) : null,
-				// These will be populated from EPUB metadata
-				rights: null,
-				subjects: null,
-			}));
+				console.log('Library rows found:', results.length);
+				
+				return this.mapBookResults(results);
+			} catch (bufferError: any) {
+				if (bufferError.message.includes('maxBuffer length exceeded')) {
+					console.log('Large library detected, using chunked approach...');
+					return await this.getBookDetailsChunked(dbPath, allColumns);
+				} else {
+					throw bufferError;
+				}
+			}
 		} catch (error: any) {
 			console.error('Error in getBookDetails:', error);
 			throw new Error(`Failed to get book details: ${error?.message || 'Unknown error'}`);
 		}
+	}
+
+	private static async getBookDetailsChunked(dbPath: string, columns: string[]): Promise<BookDetail[]> {
+		try {
+			// First get count to determine chunk size
+			const countQuery = 'SELECT COUNT(*) as count FROM ZBKLIBRARYASSET;';
+			const countResult = await this.executeSqlQueryWithHeaders(dbPath, countQuery);
+			const totalBooks = parseInt(countResult[0].count);
+			
+			console.log(`Total books in library: ${totalBooks}, processing in chunks...`);
+			
+			const chunkSize = 1000; // Process 1000 books at a time
+			const allBooks: BookDetail[] = [];
+			
+			for (let offset = 0; offset < totalBooks; offset += chunkSize) {
+				console.log(`Processing books ${offset + 1} to ${Math.min(offset + chunkSize, totalBooks)}...`);
+				
+				const chunkQuery = `SELECT ${columns.join(', ')} FROM ZBKLIBRARYASSET LIMIT ${chunkSize} OFFSET ${offset};`;
+				const chunkResults = await this.executeSqlQueryWithHeaders(dbPath, chunkQuery);
+				
+				const chunkBooks = this.mapBookResults(chunkResults);
+				allBooks.push(...chunkBooks);
+				
+				// Small delay to prevent overwhelming the system
+				await new Promise(resolve => setTimeout(resolve, 100));
+			}
+			
+			console.log(`Chunked processing complete: ${allBooks.length} books loaded`);
+			return allBooks;
+		} catch (error: any) {
+			console.error('Error in chunked book details:', error);
+			throw new Error(`Failed to get chunked book details: ${error?.message || 'Unknown error'}`);
+		}
+	}
+
+	private static mapBookResults(results: any[]): BookDetail[] {
+		return results.map((row: any) => ({
+			assetId: row.ZASSETID,
+			title: row.ZSORTTITLE || 'Unknown Title',
+			author: row.ZSORTAUTHOR || null,
+			description: row.ZBOOKDESCRIPTION || null,
+			epubId: row.ZEPUBID || null,
+			path: row.ZPATH || null,
+			isbn: null, // Will be populated from EPUB metadata if available
+			language: row.ZLANGUAGE || null,
+			publisher: null, // Will be populated from EPUB metadata if available
+			publicationDate: null, // Will be populated from EPUB metadata if available
+			cover: null,
+			// Extended fields (will be null if columns don't exist in this database version)
+			genre: row.ZGENRE || null,
+			genres: row.ZGENRES || null,
+			year: row.ZYEAR || null,
+			pageCount: (row.ZPAGECOUNT && parseInt(row.ZPAGECOUNT) > 1) ? parseInt(row.ZPAGECOUNT) : null,
+			rating: row.ZRATING ? parseInt(row.ZRATING) : null,
+			comments: row.ZCOMMENTS || null,
+			readingProgress: row.ZREADINGPROGRESS ? parseFloat(row.ZREADINGPROGRESS) : null,
+			creationDate: row.ZCREATIONDATE ? new Date(row.ZCREATIONDATE * 1000 + Date.UTC(2001, 0, 1)) : null,
+			lastOpenDate: row.ZLASTOPENDATE ? new Date(row.ZLASTOPENDATE * 1000 + Date.UTC(2001, 0, 1)) : null,
+			modificationDate: row.ZMODIFICATIONDATE ? new Date(row.ZMODIFICATIONDATE * 1000 + Date.UTC(2001, 0, 1)) : null,
+			// These will be populated from EPUB metadata
+			rights: null,
+			subjects: null,
+		}));
 	}
 
 	static async getBooksWithHighlights(): Promise<string[]> {
