@@ -1,6 +1,7 @@
 // main.ts
 import { Notice, Plugin, TFile } from 'obsidian';
 import { AppleBooksImporterSettings, BookDetail, Annotation } from './types';
+import { BookSelectionModal, BookSelectionItem } from './BookSelectionModal'; // Import the modal and item type
 import { AppleBooksImporterSettingTab, DEFAULT_SETTINGS } from './settings';
 import { AppleBooksDatabase } from './database';
 import { MarkdownGenerator } from './markdown';
@@ -283,34 +284,176 @@ SORT publication_date DESC
 	}
 
 	async showBookSelector() {
-		// This is a placeholder for future enhancement
-		// Could show a modal with checkboxes to select specific books
-		new Notice('📖 Book selector coming in a future update!', 3000);
-		
+		const dbCheck = AppleBooksDatabase.checkDatabaseAccess();
+		if (!dbCheck.canAccess) {
+			new Notice(`❌ ${dbCheck.error}`, 5000);
+			return;
+		}
+
 		try {
-			const dbCheck = AppleBooksDatabase.checkDatabaseAccess();
-			if (!dbCheck.canAccess) {
-				new Notice(`❌ ${dbCheck.error}`, 5000);
+			new Notice('Loading books for selection...', 2000);
+			const allBookDetails = await AppleBooksDatabase.getBookDetails();
+			const booksWithHighlightsIds = await AppleBooksDatabase.getBooksWithHighlights();
+
+			if (booksWithHighlightsIds.length === 0) {
+				new Notice('No books with highlights found in Apple Books.', 4000);
 				return;
 			}
 
-			const booksWithHighlights = await AppleBooksDatabase.getBooksWithHighlights();
-			const allBooks = await AppleBooksDatabase.getBookDetails();
-			
-			const availableBooks = booksWithHighlights
-				.map(assetId => allBooks.find(b => b.assetId === assetId))
-				.filter((book): book is BookDetail => book !== undefined)
-				.map(book => `• ${book.title} by ${book.author || 'Unknown Author'}`)
-				.join('\n');
+			// Filter book details to only those with highlights
+			// and prepare them for the modal
+			const booksForModalPromises = allBookDetails
+				.filter(book => booksWithHighlightsIds.includes(book.assetId))
+				.map(async (book) => {
+					let annotationCount = 0;
+					let coverImage: string | undefined = undefined;
 
-			if (availableBooks) {
-				new Notice(`Available books:\n${availableBooks}`, 10000);
-			} else {
-				new Notice('No books with highlights found', 3000);
+					// Get annotation count
+					try {
+						const annotations = await AppleBooksDatabase.getAnnotationsForBook(book.assetId);
+						annotationCount = annotations.filter(ann => ann.selectedText.trim().length > 0).length;
+					} catch (e) {
+						console.warn(`Could not fetch annotation count for ${book.title}`, e);
+					}
+
+					// Get cover image if setting is enabled (and path exists)
+					// This might be slow if there are many books. Consider a placeholder or fetching on demand later.
+					if (this.settings.includeCovers && book.path) {
+						try {
+							const epubMetadata = await AppleBooksDatabase.getEpubMetadata(book.path);
+							if (epubMetadata && epubMetadata.cover) {
+								coverImage = `data:image/jpeg;base64,${epubMetadata.cover}`;
+							}
+						} catch(e) {
+							console.warn(`Could not fetch cover for ${book.title}`, e);
+						}
+					}
+
+					return {
+						...book,
+						annotationCount: annotationCount,
+						selected: true, // Default to selected
+						coverImage: coverImage,
+					} as BookSelectionItem;
+				});
+
+			const booksForModal = await Promise.all(booksForModalPromises);
+			
+			// Filter out books that ended up with 0 annotations after fetching
+			const finalBooksForModal = booksForModal.filter(book => book.annotationCount > 0);
+
+			if (finalBooksForModal.length === 0) {
+				new Notice('No books with valid annotations found after processing.', 4000);
+				return;
 			}
 
+			new BookSelectionModal(this.app, finalBooksForModal, async (selectedBooks) => {
+				if (selectedBooks.length > 0) {
+					new Notice(`Importing ${selectedBooks.length} selected books...`, 3000);
+					await this.importSelectedBooks(selectedBooks as BookDetail[]); // Cast if necessary, BookSelectionItem extends BookDetail
+				} else {
+					new Notice('No books selected for import.');
+				}
+			}).open();
+
 		} catch (error: any) {
-			new Notice(`❌ Error listing books: ${error?.message || 'Unknown error'}`, 5000);
+			console.error('Error preparing book selector:', error);
+			new Notice(`❌ Error opening book selector: ${error?.message || 'Unknown error'}`, 5000);
 		}
+	}
+
+	async importSelectedBooks(selectedBooks: BookDetail[]) {
+		let importedCount = 0;
+		let skippedCount = 0;
+
+		for (const book of selectedBooks) {
+			try {
+				// We already have basic book details. We need annotations.
+				// The 'book' object from selection modal might already be enriched if we decide to pass more data.
+				// For now, assume 'book' is a BookDetail and we re-fetch annotations.
+
+				let annotations = await AppleBooksDatabase.getAnnotationsForBook(book.assetId);
+				annotations = annotations.filter(annotation => annotation.selectedText.trim().length > 0);
+
+				if (annotations.length === 0) {
+					console.log(`No valid annotations found for selected book: ${book.title}`);
+					skippedCount++;
+					continue;
+				}
+
+				// Sort annotations if enabled
+				if (this.settings.sortAnnotations) {
+					annotations = AppleBooksDatabase.sortAnnotationsByCFI(annotations);
+				}
+
+				// Enrich book with EPUB metadata if not already done, or if settings require it for markdown
+				let enrichedBook = book;
+				if (book.path && (this.settings.includeCovers || this.settings.includeExtendedFrontmatter || this.settings.includeExtendedInNote)) {
+					// Check if cover was already fetched for the modal
+					const bookFromModal = book as BookSelectionItem; // Cast to access potential coverImage
+					if (bookFromModal.coverImage && this.settings.includeCovers) {
+						// If cover was fetched for modal, reuse it by ensuring it's in the right format for MarkdownGenerator
+						// MarkdownGenerator expects 'cover' to be base64 string if includeCovers is true.
+						// Our coverImage is already 'data:image/jpeg;base64,...'
+						// The MarkdownGenerator might need adjustment or we strip the prefix here.
+						// For now, let's assume MarkdownGenerator can handle it or it expects raw base64.
+						// Let's strip the prefix for now for 'enrichedBook.cover'
+						if (bookFromModal.coverImage.startsWith('data:image/jpeg;base64,')) {
+							enrichedBook.cover = bookFromModal.coverImage.substring('data:image/jpeg;base64,'.length);
+						} else {
+							// If not the expected format, try to re-fetch or clear
+							enrichedBook.cover = null; // Assign null instead of undefined
+						}
+					}
+
+					// Re-fetch full EPUB metadata if other extended details are needed,
+					// or if cover wasn't fetched/available from modal.
+					if (!enrichedBook.cover || this.settings.includeExtendedFrontmatter || this.settings.includeExtendedInNote) {
+						try {
+							const epubMetadata = await AppleBooksDatabase.getEpubMetadata(book.path);
+							if (epubMetadata) {
+								enrichedBook = {
+									...enrichedBook, // keep existing data from selection
+									isbn: epubMetadata.isbn || enrichedBook.isbn,
+									language: epubMetadata.language || enrichedBook.language,
+									publisher: epubMetadata.publisher || enrichedBook.publisher,
+									publicationDate: epubMetadata.publicationDate || enrichedBook.publicationDate,
+									rights: epubMetadata.rights || enrichedBook.rights,
+									subjects: epubMetadata.subjects || enrichedBook.subjects,
+									cover: epubMetadata.cover || enrichedBook.cover // Prioritize fresh epub cover if available
+								};
+							}
+						} catch (epubError) {
+							console.log(`EPUB processing failed for ${book.title} during selected import, continuing with basic/modal metadata`);
+						}
+					}
+				}
+
+				const markdownContent = MarkdownGenerator.generateMarkdown(
+					enrichedBook,
+					annotations,
+					this.settings
+				);
+				const fileName = MarkdownGenerator.generateFileName(enrichedBook);
+				await this.createBookNote(fileName, markdownContent);
+
+				if (enrichedBook.author && this.settings.createAuthorPages) {
+					await this.createAuthorPageIfNeeded(enrichedBook.author);
+				}
+
+				importedCount++;
+				if (importedCount % 5 === 0 && importedCount < selectedBooks.length) {
+					new Notice(`Imported ${importedCount} of ${selectedBooks.length} books...`, 2000);
+				}
+
+			} catch (error) {
+				console.error(`Error importing selected book ${book.title} (ID: ${book.assetId}):`, error);
+				new Notice(`❌ Error importing ${book.title}. Check console for details.`, 4000);
+				skippedCount++;
+			}
+		}
+
+		const message = `✅ Selected import complete! ${importedCount} books imported${skippedCount > 0 ? `, ${skippedCount} skipped` : ''}.`;
+		new Notice(message, 5000);
 	}
 }

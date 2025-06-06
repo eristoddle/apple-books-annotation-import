@@ -22,6 +22,7 @@ Import highlights and notes from the Apple Books app directly into your Obsidian
 - **Custom Tagging**: Add custom tags to imported notes
 - **Author Linking**: Automatic linking to author pages
 - **Overwrite Control**: Option to update existing notes or skip them
+- **Interactive Book Selection**: Choose exactly which books to import via a user-friendly dialog, showing cover images, titles, authors, and annotation counts.
 
 ### ⚙️ **Extensive Configuration**
 - **Metadata Control**: Choose which metadata fields to include
@@ -93,7 +94,7 @@ The simplest way to install and test this plugin is with BRAT (Beta Reviewer's A
 ### Alternative Access
 
 - Click the 📖 book icon in the left ribbon
-- Use the command "Select books to import" to preview available books
+- Use the command "Select books to import" to open a dialog where you can choose specific books to import. This dialog displays cover images, titles, authors, and annotation counts for each book.
 
 ## ⚙️ Configuration
 
@@ -197,7 +198,7 @@ The plugin provides visual indicators for different highlight types:
 ## 🔧 Commands
 
 - **Import all books with highlights**: Imports all books that have annotations
-- **Select books to import**: Preview available books and their annotation counts
+- **Select books to import**: Opens an interactive dialog allowing you to select specific books for import. Displays cover images, titles, authors, and annotation counts.
 
 ## 📊 Data Extracted
 
@@ -347,7 +348,7 @@ This project is licensed under the MIT License. See the [LICENSE](LICENSE) file 
 
 ## 🔮 Future Enhancements
 
-- [ ] Interactive book selection dialog
+- [x] Interactive book selection dialog
 - [ ] Bulk export/import operations
 - [ ] Custom note templates
 - [ ] Integration with other reading apps
