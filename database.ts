@@ -676,6 +676,11 @@ export class AppleBooksDatabase {
 			
 			console.log(`Found ${results.length} annotation rows for asset ${assetId}`);
 
+			if (results.length > 0) {
+				const distinctStyles = [...new Set(results.map(r => r.ZANNOTATIONSTYLE))];
+				console.log(`Distinct ZANNOTATIONSTYLE values for asset ${assetId}:`, distinctStyles);
+			}
+
 			const annotations = results
 				.map((row: any) => ({
 					selectedText: row.ZANNOTATIONSELECTEDTEXT || '',
@@ -684,7 +689,7 @@ export class AppleBooksDatabase {
 					physicalLocation: row.ZPLABSOLUTEPHYSICALLOCATION ? parseInt(row.ZPLABSOLUTEPHYSICALLOCATION) : null,
 					// Set defaults for extended fields to match interface
 					annotationType: null, // Assuming ZANNOTATIONTYPE might be added later or is not part of this specific request
-					annotationStyle: row.ZANNOTATIONSTYLE || null, // Map ZANNOTATIONSTYLE
+					annotationStyle: row.ZANNOTATIONSTYLE !== null && row.ZANNOTATIONSTYLE !== '' ? parseInt(row.ZANNOTATIONSTYLE) : null,
 					isUnderline: row.ZANNOTATIONISUNDERLINE ? (parseInt(row.ZANNOTATIONISUNDERLINE) === 1) : false, // Map ZANNOTATIONISUNDERLINE, converting to boolean
 					creationDate: null,
 					modificationDate: null,
