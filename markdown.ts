@@ -343,12 +343,13 @@ export class MarkdownGenerator {
 			if (settings.includeAnnotationStyles) {
 				if (annotation.annotationStyle !== null) {
 					switch (annotation.annotationStyle) {
-						case 0: styleIndicator = '🟡 '; break; // Yellow highlight
-						case 1: styleIndicator = '🟢 '; break; // Green highlight
-						case 2: styleIndicator = '🔵 '; break; // Blue highlight
-						case 3: styleIndicator = '🟣 '; break; // Purple highlight
-						case 4: styleIndicator = '🔴 '; break; // Red highlight
-						default: styleIndicator = ''; break;
+						case 0: styleIndicator = ''; break;    // Style 0 is for underline, color is handled by isUnderline or default
+						case 1: styleIndicator = '🟢 '; break; // Green
+						case 2: styleIndicator = '🔵 '; break; // Blue
+						case 3: styleIndicator = '🟡 '; break; // Yellow
+						case 4: styleIndicator = '🔴 '; break; // Pink (using Red icon as proxy)
+						case 5: styleIndicator = '🟣 '; break; // Purple
+						default: styleIndicator = ''; break;   // No icon for unknown styles
 					}
 				}
 				if (annotation.isUnderline) {

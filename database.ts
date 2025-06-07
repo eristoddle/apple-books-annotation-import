@@ -670,11 +670,16 @@ export class AppleBooksDatabase {
 			const dbPath = this.getDbPath(ANNOTATION_DB_PATTERN);
 
 			// Use EXACT same query as Python script - just the basic 4 columns
-			const query = `SELECT ZANNOTATIONSELECTEDTEXT, ZANNOTATIONNOTE, ZANNOTATIONLOCATION, ZPLABSOLUTEPHYSICALLOCATION FROM ZAEANNOTATION WHERE ZANNOTATIONASSETID = '${assetId}' AND ZANNOTATIONSELECTEDTEXT != '';`;
+			const query = `SELECT ZANNOTATIONSELECTEDTEXT, ZANNOTATIONNOTE, ZANNOTATIONLOCATION, ZPLABSOLUTEPHYSICALLOCATION, ZANNOTATIONSTYLE, ZANNOTATIONISUNDERLINE FROM ZAEANNOTATION WHERE ZANNOTATIONASSETID = '${assetId}' AND ZANNOTATIONSELECTEDTEXT != '';`;
 
 			const results = await this.executeSqlQueryWithHeaders(dbPath, query);
 			
 			console.log(`Found ${results.length} annotation rows for asset ${assetId}`);
+
+			if (results.length > 0) {
+				const distinctStyles = [...new Set(results.map(r => r.ZANNOTATIONSTYLE))];
+				console.log(`Distinct ZANNOTATIONSTYLE values for asset ${assetId}:`, distinctStyles);
+			}
 
 			const annotations = results
 				.map((row: any) => ({
@@ -683,9 +688,9 @@ export class AppleBooksDatabase {
 					location: row.ZANNOTATIONLOCATION || null,
 					physicalLocation: row.ZPLABSOLUTEPHYSICALLOCATION ? parseInt(row.ZPLABSOLUTEPHYSICALLOCATION) : null,
 					// Set defaults for extended fields to match interface
-					annotationType: null,
-					annotationStyle: null,
-					isUnderline: false,
+					annotationType: null, // Assuming ZANNOTATIONTYPE might be added later or is not part of this specific request
+					annotationStyle: row.ZANNOTATIONSTYLE !== null && row.ZANNOTATIONSTYLE !== '' ? parseInt(row.ZANNOTATIONSTYLE) : null,
+					isUnderline: row.ZANNOTATIONISUNDERLINE ? (parseInt(row.ZANNOTATIONISUNDERLINE) === 1) : false, // Map ZANNOTATIONISUNDERLINE, converting to boolean
 					creationDate: null,
 					modificationDate: null,
 					uuid: null,
