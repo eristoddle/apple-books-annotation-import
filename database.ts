@@ -909,6 +909,7 @@ export class AppleBooksDatabase {
 		} catch (error) {
 			return [0];
 		}
+	}
 
 	// Helper function to transform TOC from epub-parser format
 	private static _transformToc(
@@ -946,6 +947,5 @@ export class AppleBooksDatabase {
 			toc.push(tocEntry);
 		}
 		return toc;
-	}
 	}
 }
