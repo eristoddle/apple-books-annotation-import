@@ -1,7 +1,124 @@
 // markdown.ts
-import { BookDetail, Annotation, AppleBooksImporterSettings } from './types';
+import { BookDetail, Annotation, AppleBooksImporterSettings, TocEntry, ManifestItem, SpineItem } from './types';
 
 export class MarkdownGenerator {
+
+	private static normalizePath(filePath: string): string {
+		if (!filePath) return '';
+		let normalized = filePath;
+		try {
+			normalized = decodeURIComponent(normalized);
+		} catch (e) {
+			// URI might not be encoded, or malformed
+			console.warn(`Could not decode URI component: ${filePath}`, e);
+		}
+		// Remove leading './'
+		if (normalized.startsWith('./')) {
+			normalized = normalized.substring(2);
+		}
+		// Remove URL anchors
+		const anchorIndex = normalized.indexOf('#');
+		if (anchorIndex !== -1) {
+			normalized = normalized.substring(0, anchorIndex);
+		}
+		// Further path normalization could be added here if needed,
+		// e.g. resolving '..' but epub-parser hrefs are usually root-relative or full.
+		return normalized;
+	}
+
+	// New function to get chapter title from ToC
+	private static getChapterTitleFromToc(cfi: string, toc: TocEntry[], manifest: ManifestItem[], spine: SpineItem[]): string | null {
+		if (!cfi || !toc || toc.length === 0 || !manifest || manifest.length === 0 || !spine || spine.length === 0) {
+			// console.log('[getChapterTitleFromToc] Missing required data:', {cfiExists: !!cfi, tocExists: !!toc, manifestExists: !!manifest, spineExists: !!spine});
+			return null;
+		}
+
+		try {
+			// Parse CFI's base path to get the step
+			const cfiMatch = cfi.match(/^epubcfi\(([^!]+)!/);
+			if (!cfiMatch || !cfiMatch[1]) {
+				// console.log('[getChapterTitleFromToc] Could not parse CFI base path:', cfi);
+				return null;
+			}
+			const cfiBasePathString = cfiMatch[1]; // e.g., /6/2[someid] or /6/2
+
+			// Extract the first numerical step component
+			const stepMatch = cfiBasePathString.match(/^\/(\d+)/);
+			if (!stepMatch || !stepMatch[1]) {
+				// console.log('[getChapterTitleFromToc] Could not parse CFI step from base path:', cfiBasePathString);
+				return null;
+			}
+
+			const cfiStep = parseInt(stepMatch[1], 10);
+			if (isNaN(cfiStep) || cfiStep < 2) { // CFI steps are usually /2, /4, /6 etc. /2 seems to be the first possible main content item.
+				// console.log('[getChapterTitleFromToc] Invalid CFI step:', cfiStep);
+				return null;
+			}
+
+			// Determine document href from CFI using manifest and spine
+			// CFI steps are 1-based for the EPUB reading order.
+			// Spine items are 0-indexed.
+			// Each content document takes two steps in the CFI path (e.g., /6/ refers to the 3rd document, /4/ to the 2nd).
+			const spineIndex = (cfiStep / 2) - 1;
+
+			if (spineIndex < 0 || spineIndex >= spine.length) {
+				// console.log('[getChapterTitleFromToc] CFI spine index out of bounds:', spineIndex, 'spine length:', spine.length);
+				return null;
+			}
+
+			const spineItem = spine[spineIndex];
+			if (!spineItem || !spineItem.idref) {
+				// console.log('[getChapterTitleFromToc] Invalid spine item or idref at index:', spineIndex, spineItem);
+				return null;
+			}
+
+			const manifestItem = manifest.find(item => item.id === spineItem.idref);
+			if (!manifestItem || !manifestItem.href) {
+				// console.log('[getChapterTitleFromToc] Manifest item not found or href missing for idref:', spineItem.idref);
+				return null;
+			}
+
+			const cfiDocHref = this.normalizePath(manifestItem.href);
+			// console.log(`[getChapterTitleFromToc] CFI Doc Href: ${cfiDocHref} (from CFI step ${cfiStep}, spine index ${spineIndex})`);
+
+			// Flatten ToC for easier searching
+			const flattenToc = (tocEntries: TocEntry[]): TocEntry[] => {
+				const flat: TocEntry[] = [];
+				function recurse(items: TocEntry[]) {
+					for (const item of items) {
+						flat.push(item);
+						if (item.subitems && item.subitems.length > 0) {
+							recurse(item.subitems);
+						}
+					}
+				}
+				recurse(tocEntries);
+				return flat;
+			};
+			const flatToc = flattenToc(toc);
+
+			// Find matching chapter in ToC by comparing normalized hrefs
+			// Iterate backwards to find the last ToC entry that matches the document,
+			// as it's more likely to be the correct chapter if multiple ToC entries point to the same file.
+			for (let i = flatToc.length - 1; i >= 0; i--) {
+				const tocItem = flatToc[i];
+				if (!tocItem.href) continue;
+
+				const tocItemDocHref = this.normalizePath(tocItem.href);
+				// console.log(`[getChapterTitleFromToc] Comparing CFI Doc: '${cfiDocHref}' with ToC Item: '${tocItemDocHref}' (Title: ${tocItem.title})`);
+				if (tocItemDocHref === cfiDocHref) {
+					// console.log(`[getChapterTitleFromToc] Matched: ${tocItem.title} for href ${cfiDocHref}`);
+					return tocItem.title;
+				}
+			}
+			// console.log('[getChapterTitleFromToc] No matching ToC item found for CFI href:', cfiDocHref);
+
+		} catch (error: any) {
+			console.error('[getChapterTitleFromToc] Error processing CFI for chapter title:', error.message, error.stack);
+		}
+		return null;
+	}
+
 	static sanitizeFrontmatter(text: string): string {
 		if (!text) return '';
 
@@ -331,7 +448,16 @@ export class MarkdownGenerator {
 			
 			// Add chapter heading if enabled and we have a new chapter
 			if (settings.includeChapterInfo && annotation.location) {
-				const chapter = this.extractChapterFromCFI(annotation.location);
+				let chapter: string | null = null;
+				// Try new method first
+				if (book.toc && book.manifest && book.spine) {
+					chapter = MarkdownGenerator.getChapterTitleFromToc(annotation.location, book.toc, book.manifest, book.spine);
+				}
+				// Fallback to old method if new one fails or data is missing
+				if (!chapter) {
+					chapter = MarkdownGenerator.extractChapterFromCFI(annotation.location);
+				}
+
 				if (chapter && chapter !== currentChapter) {
 					currentChapter = chapter;
 					content += `### ${chapter}\n\n`;

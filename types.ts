@@ -1,4 +1,13 @@
 // types.ts
+export interface TocEntry {
+  title: string;
+  href: string;
+  order: number;
+  id?: string;
+  parent?: string | null; // parent can be null for top-level items
+  subitems?: TocEntry[]; // For nested ToC structure
+}
+
 export interface BookDetail {
 	assetId: string;
 	title: string;
@@ -25,6 +34,22 @@ export interface BookDetail {
 	// Enhanced metadata from EPUB
 	rights: string | null;
 	subjects: string[] | null;
+	toc?: TocEntry[];
+	manifest?: ManifestItem[];
+	spine?: SpineItem[];
+}
+
+export interface ManifestItem {
+  id: string;
+  href: string;
+  mediaType?: string;
+  properties?: string;
+}
+
+export interface SpineItem {
+  idref: string;
+  linear?: string;
+  properties?: string;
 }
 
 export interface Annotation {

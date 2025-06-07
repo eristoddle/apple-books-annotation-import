@@ -5,6 +5,7 @@ import * as os from 'os';
 import * as glob from 'glob';
 import { exec } from 'child_process';
 import { promisify } from 'util';
+import EpubParser from 'epub-parser';
 import { BookDetail, Annotation } from './types';
 
 const execAsync = promisify(exec);
@@ -46,18 +47,120 @@ export class AppleBooksDatabase {
 			const stats = fs.statSync(epubPath);
 			console.log(`[getEpubMetadata] Path exists - isFile: ${stats.isFile()}, isDirectory: ${stats.isDirectory()}`);
 
-			if (stats.isDirectory()) {
+			if (stats.isFile()) {
+				console.log('[getEpubMetadata] Processing EPUB file:', epubPath);
+				try {
+					const epubData = await EpubParser.open(epubPath);
+					console.log('[getEpubMetadata] EPUB parsed successfully.');
+					// console.log('[getEpubMetadata] epubData.toc structure:', JSON.stringify(epubData.toc, null, 2));
+					// console.log('[getEpubMetadata] epubData.navigation.toc structure:', JSON.stringify(epubData.navigation?.toc, null, 2));
+
+					const metadata: any = {
+						title: epubData.metadata?.title,
+						author: epubData.metadata?.creator,
+						language: epubData.metadata?.language,
+						publisher: epubData.metadata?.publisher,
+						isbn: epubData.metadata?.identifier, // Or specific ISBN, need to check epubData structure
+						publicationDate: epubData.metadata?.date,
+						rights: epubData.metadata?.rights,
+						subjects: epubData.metadata?.subject, // Might be an array or string
+						toc: [],
+						cover: null,
+						manifest: [],
+						spine: [],
+					};
+
+					// Manifest Processing
+					if (epubData.manifest) {
+						metadata.manifest = Object.entries(epubData.manifest).map(([id, item]: [string, any]) => ({
+							id: id, // Or item.id if present and preferred
+							href: item.href,
+							mediaType: item['media-type'] || item.mediaType, // Handle potential casing differences
+							properties: item.properties,
+						}));
+					}
+
+					// Spine Processing - epub-parser stores spine items directly in an array epubData.spine.items
+					// The structure is usually { idref: string, linear?: "yes" | "no", properties?: string }
+					// which matches our SpineItem interface.
+					if (epubData.spine && epubData.spine.items && Array.isArray(epubData.spine.items)) {
+						metadata.spine = epubData.spine.items.map((spineItem: any) => ({
+							idref: spineItem.idref,
+							linear: spineItem.linear === 'no' ? 'no' : 'yes', // Ensure linear is 'yes' or 'no'
+							properties: spineItem.properties,
+						}));
+					}
+
+
+					// Table of Contents Processing
+					const rawToc = epubData.toc || epubData.navigation?.toc;
+					if (rawToc && Array.isArray(rawToc)) {
+						metadata.toc = this._transformToc(rawToc);
+						// console.log('[getEpubMetadata] Transformed TOC:', JSON.stringify(metadata.toc, null, 2));
+					} else {
+						console.log('[getEpubMetadata] No Table of Contents found in EPUB data.');
+					}
+
+					// Cover Image Processing
+					// epub-parser doesn't directly give a cover image API like getImage.
+					// We need to find the cover image href from the manifest, then get its content.
+					let coverHref = null;
+					if (epubData.manifest) {
+						// Try to find item with properties="cover-image"
+						const coverItem = Object.values(epubData.manifest).find((item: any) => item.properties === 'cover-image');
+						if (coverItem) {
+							coverHref = coverItem.href;
+						} else {
+							// Fallback: look for common cover IDs or hrefs
+							const commonCoverIds = ['cover', 'cover-image', 'coverimage'];
+							for (const id of commonCoverIds) {
+								if (epubData.manifest[id]) {
+									coverHref = epubData.manifest[id].href;
+									break;
+								}
+							}
+							if (!coverHref) {
+								// Fallback: look for common href patterns
+								const coverManifestItem = Object.values(epubData.manifest).find((item: any) =>
+									item.href && /cover\.(jpeg|jpg|png|gif)$/i.test(item.href)
+								);
+								if (coverManifestItem) coverHref = coverManifestItem.href;
+							}
+						}
+					}
+
+					if (coverHref) {
+						try {
+							console.log(`[getEpubMetadata] Found cover candidate href: ${coverHref}`);
+							// getFileContents returns a Buffer
+							const coverBuffer = await epubData.getFileContents(coverHref);
+							if (coverBuffer) {
+								metadata.cover = coverBuffer.toString('base64');
+								console.log('[getEpubMetadata] Successfully processed cover image from EPUB.');
+							}
+						} catch (coverError: any) {
+							console.error(`[getEpubMetadata] Error getting cover image content for ${coverHref}:`, coverError.message);
+						}
+					} else {
+						console.log('[getEpubMetadata] Could not find cover image in EPUB manifest.');
+					}
+
+					console.log('[getEpubMetadata] Successfully extracted metadata from EPUB file:', metadata.title);
+					return metadata;
+
+				} catch (parseError: any) {
+					console.error(`[getEpubMetadata] Error parsing EPUB file ${epubPath}:`, parseError.message, parseError.stack);
+					// Fall through to return null or try directory metadata if epubPath could also be a directory
+				}
+			} else if (stats.isDirectory()) {
 				console.log('[getEpubMetadata] Found extracted EPUB directory, proceeding to read metadata...');
 				const metadata = await this.readEpubDirectoryMetadata(epubPath);
 				if (metadata) {
-					console.log('[getEpubMetadata] Successfully extracted EPUB metadata:', metadata);
+					console.log('[getEpubMetadata] Successfully extracted EPUB metadata from directory:', metadata.title);
 					return metadata;
 				} else {
 					console.log('[getEpubMetadata] Failed to extract metadata from EPUB directory.');
 				}
-			} else if (stats.isFile()) {
-				console.log('[getEpubMetadata] Path is a file, not a directory. EPUB metadata extraction for packed files is not yet implemented.');
-				// Could handle .epub files here if needed in the future
 			}
 
 		} catch (error: any) {
@@ -164,7 +267,10 @@ export class AppleBooksDatabase {
 			publicationDate: null,
 			rights: null,
 			subjects: null,
-			cover: null
+			cover: null,
+			toc: [], // Initialize toc for consistency
+			manifest: [], // Initialize manifest for consistency
+			spine: []    // Initialize spine for consistency
 		};
 
 		try {
@@ -219,7 +325,10 @@ export class AppleBooksDatabase {
 			language: null,
 			publisher: null,
 			publicationDate: null,
-			cover: null
+			cover: null,
+			toc: [],      // Initialize toc for consistency
+			manifest: [], // Initialize manifest for consistency
+			spine: []     // Initialize spine for consistency
 		};
 
 		try {
@@ -800,5 +909,43 @@ export class AppleBooksDatabase {
 		} catch (error) {
 			return [0];
 		}
+
+	// Helper function to transform TOC from epub-parser format
+	private static _transformToc(
+		epubTocItems: any[],
+		parent?: string,
+		orderCounter = { count: 0 }
+	): Array<{ title: string; href: string; order: number; id?: string; parent?: string; subitems?: any[] }> {
+		const toc: Array<{ title: string; href: string; order: number; id?: string; parent?: string; subitems?: any[] }> = [];
+
+		for (const item of epubTocItems) {
+			orderCounter.count++;
+			const title = item.label || item.title || 'Untitled Section';
+			let href = item.href || '';
+
+			// Clean up href, remove anchors
+			if (href.includes('#')) {
+				href = href.substring(0, href.indexOf('#'));
+			}
+
+			const tocEntry: any = {
+				title: title,
+				href: href,
+				order: item.playOrder || item.order || orderCounter.count,
+				id: item.id,
+			};
+
+			if (parent) {
+				tocEntry.parent = parent;
+			}
+
+			if (item.subitems && item.subitems.length > 0) {
+				tocEntry.subitems = this._transformToc(item.subitems, item.id || title, orderCounter);
+			}
+
+			toc.push(tocEntry);
+		}
+		return toc;
+	}
 	}
 }

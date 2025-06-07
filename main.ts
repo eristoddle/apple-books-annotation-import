@@ -146,7 +146,11 @@ export default class AppleBooksImporterPlugin extends Plugin {
 									publicationDate: epubMetadata.publicationDate || book.publicationDate,
 									rights: epubMetadata.rights || book.rights,
 									subjects: epubMetadata.subjects || book.subjects,
-									cover: epubMetadata.cover || book.cover
+									cover: epubMetadata.cover || book.cover,
+									// Add new fields for ToC, manifest, spine
+									toc: epubMetadata.toc,
+									manifest: epubMetadata.manifest,
+									spine: epubMetadata.spine,
 								};
 								console.log(`Enhanced metadata for: ${book.title}`);
 							}
@@ -420,7 +424,11 @@ SORT publication_date DESC
 									publicationDate: epubMetadata.publicationDate || enrichedBook.publicationDate,
 									rights: epubMetadata.rights || enrichedBook.rights,
 									subjects: epubMetadata.subjects || enrichedBook.subjects,
-									cover: epubMetadata.cover || enrichedBook.cover // Prioritize fresh epub cover if available
+									cover: epubMetadata.cover || enrichedBook.cover, // Prioritize fresh epub cover if available
+									// Add new fields for ToC, manifest, spine
+									toc: epubMetadata.toc,
+									manifest: epubMetadata.manifest,
+									spine: epubMetadata.spine,
 								};
 							}
 						} catch (epubError) {
