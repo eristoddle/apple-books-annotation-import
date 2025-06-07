@@ -36,5 +36,9 @@
 	},
 	"dependencies": {
 		"glob": "^8.0.3"
+	},
+	"engines": {
+		"npm": "10.8.1",
+		"node": "20.16.0"
 	}
 }
