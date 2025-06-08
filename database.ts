@@ -68,16 +68,18 @@ export class AppleBooksDatabase {
 					});
 
 					// --- METADATA EXTRACTION ---
-					const parsedMetadata = epubInstance.metadata || {};
+					const parsedMetadata = epubInstance.metadata || {} as EPub.Metadata;
 					const metadata: any = { // Initialize with structure expected by BookDetail
 						title: parsedMetadata.title,
-						author: parsedMetadata.creator || (Array.isArray(parsedMetadata.creator) ? parsedMetadata.creator[0] : undefined),
+						// According to epub.d.ts, creator is string. If it can be array, this check is fine.
+						author: parsedMetadata.creator,
 						language: parsedMetadata.language,
-						publisher: parsedMetadata.publisher,
-						isbn: parsedMetadata.ISBN || parsedMetadata.identifier,
+						publisher: undefined, // Not directly available on EPub.Metadata
+						isbn: undefined, // Not directly available on EPub.Metadata
 						publicationDate: parsedMetadata.date,
-						rights: parsedMetadata.rights,
+						rights: undefined, // Not directly available on EPub.Metadata
 						subjects: Array.isArray(parsedMetadata.subject) ? parsedMetadata.subject : (parsedMetadata.subject ? [parsedMetadata.subject] : []),
+						description: parsedMetadata.description,
 						toc: [],
 						manifest: [],
 						spine: [],
@@ -91,85 +93,58 @@ export class AppleBooksDatabase {
 
 					// --- SPINE/FLOW PROCESSING ---
 					if (epubInstance.flow && Array.isArray(epubInstance.flow)) {
-						metadata.spine = epubInstance.flow.map((flowItem: any) => ({
+						metadata.spine = epubInstance.flow.map((flowItem: EPub.TocElement) => ({
 							idref: flowItem.id,
-							linear: flowItem.linear !== 'no' ? 'yes' : 'no',
-							// properties: flowItem.properties, // 'epub' does not seem to provide this directly in flow
+							linear: 'yes'
 						}));
-						// Create a manifest from flow for navigation and cover lookup
-						metadata.manifest = epubInstance.flow.map((flowItem: any) => ({
+						metadata.manifest = epubInstance.flow.map((flowItem: EPub.TocElement) => ({
 							id: flowItem.id,
 							href: flowItem.href,
-							mediaType: 'application/xhtml+xml', // Assume flow items are content docs
-							// properties: flowItem.properties,
+							mediaType: 'application/xhtml+xml'
 						}));
 					}
 
 					// --- COVER IMAGE PROCESSING ---
-					// The 'epub' library might have cover ID in metadata.cover (often an image ID from manifest)
-					// Or it might be found by 'cover' property in manifest items (less direct with this lib)
-					let coverId = parsedMetadata.cover; // This ID should be an item ID in the manifest
+					const potentialCoverIds = ['cover-image', 'cover', 'Cover', 'COVER', 'coverimage', 'cover-img'];
+					let coverFile: { data: Buffer; mimeType: string } | null = null;
 
-					if (coverId && typeof coverId === 'string') {
-						// Note: epubInstance.manifest contains the raw manifest data.
-						// We need to find the href for this coverId in epubInstance.manifest
-						const coverManifestItemDetails = epubInstance.manifest[coverId];
-
-						if (coverManifestItemDetails && typeof coverManifestItemDetails.href === 'string') {
+					for (const currentId of potentialCoverIds) {
+						// Only attempt if the ID actually exists in the manifest to avoid unnecessary errors.
+						// epubInstance.manifest is an object where keys are manifest item IDs.
+						if (epubInstance.manifest && epubInstance.manifest[currentId]) {
 							try {
-								// Use epubInstance.getFile(coverId, callback)
-								// For 'epub' library, getFile uses the ID of the manifest item.
-								const coverFile = await new Promise<{data: Buffer, mimeType: string} | null>((resolveFile, rejectFile) => {
-									epubInstance.getFile(coverId, (err: Error, data: Buffer, mimeType: string) => { // coverId is the key from manifest
+								coverFile = await new Promise((resolve, reject) => {
+									epubInstance.getImage(currentId, (err, data, mimeType) => {
 										if (err) {
-											console.warn(`[getEpubMetadata] Error fetching cover file by ID ${coverId} ('${coverManifestItemDetails.href}'):`, err);
-											return resolveFile(null);
+											epubInstance.getFile(currentId, (fileErr, fileData, fileMimeType) => {
+												if (fileErr) {
+													reject(fileErr); // Both failed
+												} else {
+													console.log(`[getEpubMetadata] Found cover using getFile with ID: ${currentId}`);
+													resolve({ data: fileData, mimeType: fileMimeType });
+												}
+											});
+										} else {
+											console.log(`[getEpubMetadata] Found cover using getImage with ID: ${currentId}`);
+											resolve({ data, mimeType });
 										}
-										resolveFile({ data, mimeType });
 									});
 								});
-								if (coverFile && coverFile.data) {
-									metadata.cover = coverFile.data.toString('base64');
-									console.log('[getEpubMetadata] Successfully processed cover image using cover ID from metadata.');
-								}
-							} catch (coverError) {
-								console.warn(`[getEpubMetadata] Error processing cover file by ID ${coverId}:`, coverError);
-							}
-						} else {
-							console.warn(`[getEpubMetadata] Cover ID '${coverId}' found in metadata, but no matching manifest item or href found.`);
-						}
-					} else {
-						// Fallback: If no cover ID in metadata, try to find an item with property 'cover-image' in the raw manifest
-						// This is more robust if metadata.cover is not reliable
-						if (epubInstance.manifest) {
-							const coverManifestEntry = Object.values(epubInstance.manifest).find((item: any) => item && (item.properties === 'cover-image' || item.id?.toLowerCase().includes('cover')));
-							if (coverManifestEntry && typeof (coverManifestEntry as any).id === 'string') {
-								const foundCoverId = (coverManifestEntry as any).id;
-								try {
-									const coverFile = await new Promise<{data: Buffer, mimeType: string} | null>((resolveFile, rejectFile) => {
-										epubInstance.getFile(foundCoverId, (err: Error, data: Buffer, mimeType: string) => {
-											if (err) {
-												console.warn(`[getEpubMetadata] Error fetching cover file by fallback ID ${foundCoverId}:`, err);
-												return resolveFile(null);
-											}
-											resolveFile({ data, mimeType });
-										});
-									});
-									if (coverFile && coverFile.data) {
-										metadata.cover = coverFile.data.toString('base64');
-										console.log('[getEpubMetadata] Successfully processed cover image using fallback manifest search.');
-									}
-								} catch (coverError) {
-									console.warn(`[getEpubMetadata] Error processing cover file by fallback ID ${foundCoverId}:`, coverError);
-								}
+								if (coverFile) break; // Found one, exit loop
+							} catch (error) {
+								// console.warn(`[getEpubMetadata] Error trying cover ID ${currentId}:`, error);
 							}
 						}
-					}
-					if (!metadata.cover) {
-						console.log('[getEpubMetadata] Could not find or process cover image using `epub` library.');
 					}
 
-					console.log('[getEpubMetadata] Successfully extracted metadata using `epub` library for:', metadata.title);
+					if (coverFile && coverFile.data) {
+						metadata.cover = coverFile.data.toString('base64');
+						console.log('[getEpubMetadata] Successfully processed cover image.');
+					} else {
+						console.log('[getEpubMetadata] Could not find cover image using conventional IDs.');
+					}
+
+					console.log('[getEpubMetadata] Successfully extracted metadata using `epub` library for:', metadata.title || 'Unknown Title');
 					return metadata;
 
 				} catch (parseError: any) {
