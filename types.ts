@@ -4,8 +4,9 @@ export interface TocEntry {
   href: string;
   order: number;
   id?: string;
+  level?: number; // Added level from EPub.TocElement
   parent?: string | null; // parent can be null for top-level items
-  subitems?: TocEntry[]; // For nested ToC structure
+  subitems?: TocEntry[]; // For nested ToC structure - will be undefined for flat list
 }
 
 export interface BookDetail {
