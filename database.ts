@@ -109,35 +109,47 @@ export class AppleBooksDatabase {
 					let coverFile: { data: Buffer; mimeType: string } | null = null;
 
 					for (const currentId of potentialCoverIds) {
-						// Only attempt if the ID actually exists in the manifest to avoid unnecessary errors.
-						// epubInstance.manifest is an object where keys are manifest item IDs.
-						if (epubInstance.manifest && epubInstance.manifest[currentId]) {
-							try {
-								coverFile = await new Promise((resolve, reject) => {
-									epubInstance.getImage(currentId, (err, data, mimeType) => {
-										if (err) {
-											epubInstance.getFile(currentId, (fileErr, fileData, fileMimeType) => {
-												if (fileErr) {
-													reject(fileErr); // Both failed
-												} else {
-													console.log(`[getEpubMetadata] Found cover using getFile with ID: ${currentId}`);
-													resolve({ data: fileData, mimeType: fileMimeType });
-												}
-											});
-										} else {
-											console.log(`[getEpubMetadata] Found cover using getImage with ID: ${currentId}`);
-											resolve({ data, mimeType });
-										}
-									});
+						try {
+							// Directly attempt to fetch; errors will be caught by the catch block
+							coverFile = await new Promise((resolve, reject) => {
+								epubInstance.getImage(currentId, (err, data, mimeType) => {
+									if (err) {
+										epubInstance.getFile(currentId, (fileErr, fileData, fileMimeType) => {
+											if (fileErr) {
+												// Resolve with null if this ID specifically fails,
+												// rather than rejecting the whole Promise chain for this ID.
+												// The outer catch will handle if all IDs fail.
+												// Or, reject to be caught by the outer try/catch if that's preferred.
+												// For allowing loop to continue, resolve(null) or a specific error object.
+												resolve(null); // Indicate failure for this ID
+											} else {
+												console.log(`[getEpubMetadata] Found cover using getFile with ID: ${currentId}`);
+												resolve({ data: fileData, mimeType: fileMimeType });
+											}
+										});
+									} else {
+										console.log(`[getEpubMetadata] Found cover using getImage with ID: ${currentId}`);
+										resolve({ data, mimeType });
+									}
 								});
-								if (coverFile) break; // Found one, exit loop
-							} catch (error) {
-								// console.warn(`[getEpubMetadata] Error trying cover ID ${currentId}:`, error);
+							});
+							if (coverFile) { // If successfully found (not null)
+								 metadata.cover = coverFile.data.toString('base64');
+								 console.log(`[getEpubMetadata] Successfully processed cover image with ID: ${currentId}`);
+								 break; // Exit loop as cover is found
 							}
+						} catch (error) {
+							// This catch is for if the Promise created by `new Promise` is rejected.
+							// For this loop structure, we want to continue to the next ID if one fails.
+							// console.warn(`[getEpubMetadata] Error processing cover for ID ${currentId}:`, error);
 						}
 					}
 
-					if (coverFile && coverFile.data) {
+					if (!metadata.cover) { // Check if cover was set in the loop
+						console.log('[getEpubMetadata] Could not find cover image using conventional IDs.');
+					}
+
+					console.log('[getEpubMetadata] Successfully extracted metadata using `epub` library for:', metadata.title || 'Unknown Title');
 						metadata.cover = coverFile.data.toString('base64');
 						console.log('[getEpubMetadata] Successfully processed cover image.');
 					} else {
