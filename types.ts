@@ -11,6 +11,7 @@ export interface BookDetail {
 	publisher: string | null;
 	publicationDate: string | null;
 	cover: string | null;
+	coverPath: string | null;
 	// Additional fields from database (may be null if not available in this database version)
 	genre: string | null;
 	genres: string | null; // BLOB field for multiple genres
@@ -62,4 +63,5 @@ export interface AppleBooksImporterSettings {
 	includeReadingProgress: boolean;
 	createAuthorPages: boolean;
 	includeCitations: boolean;
+	saveCoverToAttachmentFolder: boolean;
 }

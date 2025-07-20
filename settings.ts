@@ -6,6 +6,7 @@ import { AppleBooksImporterSettings } from "./types";
 export const DEFAULT_SETTINGS: AppleBooksImporterSettings = {
 	outputFolder: "Books",
 	includeCovers: true,
+	saveCoverToAttachmentFolder: false,
 	includeExtendedFrontmatter: true,
 	includeExtendedInNote: true,
 	overwriteExisting: true,
@@ -59,8 +60,24 @@ export class AppleBooksImporterSettingTab extends PluginSettingTab {
 					.onChange(async (value) => {
 						this.plugin.settings.includeCovers = value;
 						await this.plugin.saveSettings();
+						this.display(); // Refresh the settings tab
 					})
 			);
+
+		// Save cover to attachment folder setting - only show if includeCovers is true
+		if (this.plugin.settings.includeCovers) {
+			new Setting(containerEl)
+				.setName("Save cover to attachment folder")
+				.setDesc("Save cover image to the default attachment folder instead of embedding it in the note")
+				.addToggle((toggle) =>
+					toggle
+						.setValue(this.plugin.settings.saveCoverToAttachmentFolder)
+						.onChange(async (value) => {
+							this.plugin.settings.saveCoverToAttachmentFolder = value;
+							await this.plugin.saveSettings();
+						})
+				);
+		}
 
 		// Include extended metadata in frontmatter
 		new Setting(containerEl)

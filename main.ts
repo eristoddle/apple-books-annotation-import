@@ -1,5 +1,5 @@
 // main.ts
-import { Notice, Plugin, TFile } from 'obsidian';
+import { Notice, Plugin, TFile, normalizePath } from 'obsidian';
 import { AppleBooksImporterSettings, BookDetail, Annotation } from './types';
 import { BookSelectionModal, BookSelectionItem } from './BookSelectionModal'; // Import the modal and item type
 import { AppleBooksImporterSettingTab, DEFAULT_SETTINGS } from './settings';
@@ -153,6 +153,10 @@ export default class AppleBooksImporterPlugin extends Plugin {
 						} catch (epubError) {
 							console.log(`EPUB processing failed for ${book.title}, continuing with basic metadata`);
 						}
+					}
+
+					if (this.settings.saveCoverToAttachmentFolder) {
+						enrichedBook.coverPath = await this.saveCoverFile(enrichedBook);
 					}
 
 					// Generate markdown content
@@ -429,6 +433,10 @@ SORT publication_date DESC
 					}
 				}
 
+				if (this.settings.saveCoverToAttachmentFolder) {
+					enrichedBook.coverPath = await this.saveCoverFile(enrichedBook);
+				}
+
 				const markdownContent = MarkdownGenerator.generateMarkdown(
 					enrichedBook,
 					annotations,
@@ -455,5 +463,30 @@ SORT publication_date DESC
 
 		const message = `✅ Selected import complete! ${importedCount} books imported${skippedCount > 0 ? `, ${skippedCount} skipped` : ''}.`;
 		new Notice(message, 5000);
+	}
+
+	async saveCoverFile(book: BookDetail): Promise<string | null> {
+		if (!this.settings.includeCovers || !book.cover) {
+			return null;
+		}
+
+		try {
+			const attachmentFolder = await AppleBooksDatabase.getAttachmentFolderPath(this.app);
+			const coverFileName = `Cover - ${book.title}.jpg`;
+			const coverPath = normalizePath(`${attachmentFolder}/${coverFileName}`);
+			const coverExists = await this.app.vault.adapter.exists(coverPath);
+
+			if (coverExists && !this.settings.overwriteExisting) {
+				return coverPath;
+			}
+
+			const coverData = Buffer.from(book.cover, 'base64');
+			await this.app.vault.createBinary(coverPath, coverData);
+
+			return coverPath;
+		} catch (error) {
+			console.error(`Failed to save cover for ${book.title}:`, error);
+			return null;
+		}
 	}
 }
