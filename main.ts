@@ -5,6 +5,7 @@ import { BookSelectionModal, BookSelectionItem } from './BookSelectionModal'; //
 import { AppleBooksImporterSettingTab, DEFAULT_SETTINGS } from './settings';
 import { AppleBooksDatabase } from './database';
 import { MarkdownGenerator } from './markdown';
+import { CryptoUtils } from './crypto';
 
 export default class AppleBooksImporterPlugin extends Plugin {
 	settings: AppleBooksImporterSettings;
@@ -156,11 +157,21 @@ export default class AppleBooksImporterPlugin extends Plugin {
 					}
 
 					// Generate markdown content
-					const markdownContent = MarkdownGenerator.generateMarkdown(
-						enrichedBook, 
-						annotations, 
+					const markdownBody = MarkdownGenerator.generateMarkdown(
+						enrichedBook,
+						annotations,
 						this.settings
 					);
+
+					const newHash = CryptoUtils.generateSha256(markdownBody);
+
+					const frontmatter = MarkdownGenerator.generateFrontmatter(
+						enrichedBook,
+						this.settings,
+						newHash
+					);
+
+					const markdownContent = frontmatter + markdownBody;
 
 					// Generate filename
 					const fileName = MarkdownGenerator.generateFileName(book);
@@ -210,16 +221,30 @@ export default class AppleBooksImporterPlugin extends Plugin {
 				}
 			}
 
-			// Check if file already exists
 			const fileExists = await this.app.vault.adapter.exists(fullPath);
-			
-			if (fileExists && !this.settings.overwriteExisting) {
-				console.log(`Skipping existing file: ${fullPath}`);
-				return;
-			}
 
-			// Create or update the file
 			if (fileExists) {
+				if (this.settings.overwriteExisting === 'false') {
+					console.log(`Skipping existing file (overwrite disabled): ${fullPath}`);
+					return;
+				}
+
+				if (this.settings.overwriteExisting === 'smart') {
+					const existingContent = await this.app.vault.adapter.read(fullPath);
+					const frontmatter = this.app.metadataCache.getCache(fullPath)?.frontmatter;
+					const existingHash = frontmatter?.['last-import-hash'];
+
+					if (existingHash) {
+						const contentWithoutFrontmatter = existingContent.split('---').slice(2).join('---').trim();
+						const currentHash = CryptoUtils.generateSha256(contentWithoutFrontmatter);
+
+						if (existingHash !== currentHash) {
+							console.log(`Skipping modified file: ${fullPath}`);
+							return;
+						}
+					}
+				}
+
 				const file = this.app.vault.getAbstractFileByPath(fullPath) as TFile;
 				await this.app.vault.modify(file, content);
 			} else {
@@ -429,11 +454,22 @@ SORT publication_date DESC
 					}
 				}
 
-				const markdownContent = MarkdownGenerator.generateMarkdown(
+				const markdownBody = MarkdownGenerator.generateMarkdown(
 					enrichedBook,
 					annotations,
 					this.settings
 				);
+
+				const newHash = CryptoUtils.generateSha256(markdownBody);
+
+				const frontmatter = MarkdownGenerator.generateFrontmatter(
+					enrichedBook,
+					this.settings,
+					newHash
+				);
+
+				const markdownContent = frontmatter + markdownBody;
+
 				const fileName = MarkdownGenerator.generateFileName(enrichedBook);
 				await this.createBookNote(fileName, markdownContent);
 

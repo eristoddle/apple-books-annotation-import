@@ -8,7 +8,7 @@ export const DEFAULT_SETTINGS: AppleBooksImporterSettings = {
 	includeCovers: true,
 	includeExtendedFrontmatter: true,
 	includeExtendedInNote: true,
-	overwriteExisting: true,
+	overwriteExisting: 'true',
 	addTags: true,
 	customTags: "book/notes",
 	includeChapterInfo: false,
@@ -91,11 +91,14 @@ export class AppleBooksImporterSettingTab extends PluginSettingTab {
 		// Overwrite existing files
 		new Setting(containerEl)
 			.setName("Overwrite existing files")
-			.setDesc("Overwrite existing book notes when importing")
-			.addToggle((toggle) =>
-				toggle
+			.setDesc("Choose how to handle existing notes")
+			.addDropdown((dropdown) =>
+				dropdown
+					.addOption('true', 'Always overwrite')
+					.addOption('false', 'Never overwrite')
+					.addOption('smart', 'Smart overwrite')
 					.setValue(this.plugin.settings.overwriteExisting)
-					.onChange(async (value) => {
+					.onChange(async (value: 'true' | 'false' | 'smart') => {
 						this.plugin.settings.overwriteExisting = value;
 						await this.plugin.saveSettings();
 					})

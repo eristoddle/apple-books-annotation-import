@@ -127,75 +127,73 @@ export class MarkdownGenerator {
 		return parts.join(', ') + '.';
 	}
 
-	static generateMarkdown(
-		book: BookDetail, 
-		annotations: Annotation[], 
-		settings: AppleBooksImporterSettings
+	static generateFrontmatter(
+		book: BookDetail,
+		settings: AppleBooksImporterSettings,
+		hash?: string
 	): string {
-		let content = '';
+		let frontmatter = '---\n';
 
-		// Generate frontmatter
-		content += '---\n';
-		
-		// Basic metadata - include asset_id like Python version
+		if (hash) {
+			frontmatter += `last-import-hash: ${hash}\n`;
+		}
+
 		if (book.assetId) {
-			content += `asset_id: ${book.assetId}\n`;
+			frontmatter += `asset_id: ${book.assetId}\n`;
 		}
-		content += `title: ${this.sanitizeFrontmatter(book.title)}\n`;
+		frontmatter += `title: ${this.sanitizeFrontmatter(book.title)}\n`;
 		if (book.author) {
-			content += `author: ${this.sanitizeFrontmatter(book.author)}\n`;
+			frontmatter += `author: ${this.sanitizeFrontmatter(book.author)}\n`;
 		}
 
-		// Extended metadata in frontmatter if enabled
 		if (settings.includeExtendedFrontmatter) {
 			if (book.description) {
-				content += `description: ${this.sanitizeFrontmatter(book.description)}\n`;
+				frontmatter += `description: ${this.sanitizeFrontmatter(book.description)}\n`;
 			}
 			if (book.epubId) {
-				content += `epub_id: ${book.epubId}\n`;
+				frontmatter += `epub_id: ${book.epubId}\n`;
 			}
 			if (book.path) {
-				content += `path: ${book.path}\n`;
+				frontmatter += `path: ${book.path}\n`;
 			}
 			if (book.isbn) {
-				content += `isbn: ${book.isbn}\n`;
+				frontmatter += `isbn: ${book.isbn}\n`;
 			}
 			if (book.language) {
-				content += `language: ${book.language}\n`;
+				frontmatter += `language: ${book.language}\n`;
 			}
 			if (book.publisher) {
-				content += `publisher: ${this.sanitizeFrontmatter(book.publisher)}\n`;
+				frontmatter += `publisher: ${this.sanitizeFrontmatter(book.publisher)}\n`;
 			}
 			if (book.publicationDate) {
-				content += `publication_date: ${book.publicationDate}\n`;
+				frontmatter += `publication_date: ${book.publicationDate}\n`;
 			}
 			if (book.year) {
-				content += `year: ${book.year}\n`;
+				frontmatter += `year: ${book.year}\n`;
 			}
 			if (book.genre) {
-				content += `genre: ${this.sanitizeFrontmatter(book.genre)}\n`;
+				frontmatter += `genre: ${this.sanitizeFrontmatter(book.genre)}\n`;
 			}
 			if (book.pageCount) {
-				content += `page_count: ${book.pageCount}\n`;
+				frontmatter += `page_count: ${book.pageCount}\n`;
 			}
 			if (book.rating && book.rating > 0) {
-				content += `rating: ${book.rating}\n`;
+				frontmatter += `rating: ${book.rating}\n`;
 			}
 			if (book.readingProgress !== null && book.readingProgress > 0 && settings.includeReadingProgress) {
-				content += `reading_progress: ${Math.round(book.readingProgress * 100)}%\n`;
+				frontmatter += `reading_progress: ${Math.round(book.readingProgress * 100)}%\n`;
 			}
 			if (book.subjects && book.subjects.length > 0) {
-				content += `subjects: [${book.subjects.map((s: string) => `"${this.sanitizeFrontmatter(s)}"`).join(', ')}]\n`;
+				frontmatter += `subjects: [${book.subjects.map((s: string) => `"${this.sanitizeFrontmatter(s)}"`).join(', ')}]\n`;
 			}
 			if (book.rights) {
-				content += `rights: ${this.sanitizeFrontmatter(book.rights)}\n`;
+				frontmatter += `rights: ${this.sanitizeFrontmatter(book.rights)}\n`;
 			}
 			if (book.lastOpenDate) {
-				content += `last_opened: ${book.lastOpenDate.toISOString().split('T')[0]}\n`;
+				frontmatter += `last_opened: ${book.lastOpenDate.toISOString().split('T')[0]}\n`;
 			}
 		}
 
-		// Add tags if enabled
 		if (settings.addTags && settings.customTags) {
 			const tags = settings.customTags
 				.split(',')
@@ -203,10 +201,19 @@ export class MarkdownGenerator {
 				.filter(tag => tag.length > 0)
 				.map(tag => tag.startsWith('#') ? tag : `#${tag}`)
 				.join(', ');
-			content += `tags: ${tags}\n`;
+			frontmatter += `tags: ${tags}\n`;
 		}
 
-		content += '---\n\n';
+		frontmatter += '---\n\n';
+		return frontmatter;
+	}
+
+	static generateMarkdown(
+		book: BookDetail,
+		annotations: Annotation[],
+		settings: AppleBooksImporterSettings
+	): string {
+		let content = '';
 
 		// Title
 		content += `# ${book.title}`;
