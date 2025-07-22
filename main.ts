@@ -1,10 +1,12 @@
 // main.ts
 import { Notice, Plugin, TFile, normalizePath } from 'obsidian';
+import fm from 'front-matter';
 import { AppleBooksImporterSettings, BookDetail, Annotation } from './types';
 import { BookSelectionModal, BookSelectionItem } from './BookSelectionModal'; // Import the modal and item type
 import { AppleBooksImporterSettingTab, DEFAULT_SETTINGS } from './settings';
 import { AppleBooksDatabase } from './database';
-import { MarkdownGenerator } from './markdown';
+import { NoteRenderer } from './markdown';
+import { CryptoUtils } from './crypto';
 
 export default class AppleBooksImporterPlugin extends Plugin {
 	settings: AppleBooksImporterSettings;
@@ -155,35 +157,13 @@ export default class AppleBooksImporterPlugin extends Plugin {
 						}
 					}
 
-					if (this.settings.saveCoverToAttachmentFolder) {
-						enrichedBook.coverPath = await this.saveCoverFile(enrichedBook);
-					}
-
-					// Generate markdown content
-					const markdownContent = MarkdownGenerator.generateMarkdown(
-						enrichedBook, 
-						annotations, 
-						this.settings
-					);
-
-					// Generate filename
-					const fileName = MarkdownGenerator.generateFileName(book);
-
-					// Create the file
-					await this.createBookNote(fileName, markdownContent);
-
-					// Create author page if needed
-					if (enrichedBook.author && this.settings.createAuthorPages) {
-						await this.createAuthorPageIfNeeded(enrichedBook.author);
-					}
-
+					await this.importBook(enrichedBook, annotations);
 					importedCount++;
 
 					// Show progress for long imports
 					if (importedCount % 5 === 0) {
 						new Notice(`Imported ${importedCount} books...`, 2000);
 					}
-
 				} catch (error) {
 					console.error(`Error importing book ${assetId}:`, error);
 					skippedCount++;
@@ -200,10 +180,15 @@ export default class AppleBooksImporterPlugin extends Plugin {
 		}
 	}
 
-	async createBookNote(fileName: string, content: string): Promise<void> {
+	async importBook(book: BookDetail, annotations: Annotation[]): Promise<void> {
 		try {
+			// Generate the new note body and its hash
+			const newNoteBody = NoteRenderer.render(book, annotations, this.settings);
+			const newContentHash = await CryptoUtils.generateSha256(newNoteBody);
+
 			// Determine the full path
 			const outputFolder = this.settings.outputFolder.trim();
+			const fileName = NoteRenderer.getFileName(book);
 			const fullPath = outputFolder ? `${outputFolder}/${fileName}` : fileName;
 
 			// Check if folder exists and create if needed
@@ -214,24 +199,43 @@ export default class AppleBooksImporterPlugin extends Plugin {
 				}
 			}
 
-			// Check if file already exists
 			const fileExists = await this.app.vault.adapter.exists(fullPath);
-			
-			if (fileExists && !this.settings.overwriteExisting) {
-				console.log(`Skipping existing file: ${fullPath}`);
-				return;
+
+			if (fileExists) {
+				if (this.settings.overwriteExisting === 'never') {
+					console.log(`Skipping existing file (overwrite setting is 'never'): ${fullPath}`);
+					return;
+				}
+
+				if (this.settings.overwriteExisting === 'smart') {
+					const existingContent = await this.app.vault.adapter.read(fullPath);
+					const frontmatter = fm(existingContent);
+					const lastImportHash = (frontmatter?.attributes as Record<string, any>)?.['last-import-hash'];
+
+					if (lastImportHash && lastImportHash === newContentHash) {
+						console.log(`No changes detected for ${fullPath}. Skipping.`);
+						return;
+					}
+				}
 			}
+
+			// Generate the full content with frontmatter
+			const fullNewContent = NoteRenderer.renderFull(book, newNoteBody, newContentHash, this.settings);
 
 			// Create or update the file
 			if (fileExists) {
 				const file = this.app.vault.getAbstractFileByPath(fullPath) as TFile;
-				await this.app.vault.modify(file, content);
+				await this.app.vault.modify(file, fullNewContent);
 			} else {
-				await this.app.vault.create(fullPath, content);
+				await this.app.vault.create(fullPath, fullNewContent);
 			}
 
+			// Create author page if needed
+			if (book.author && this.settings.createAuthorPages) {
+				await this.createAuthorPageIfNeeded(book.author);
+			}
 		} catch (error: any) {
-			throw new Error(`Failed to create note ${fileName}: ${error?.message || 'Unknown error'}`);
+			throw new Error(`Failed to create note ${book.title}: ${error?.message || 'Unknown error'}`);
 		}
 	}
 
@@ -437,17 +441,7 @@ SORT publication_date DESC
 					enrichedBook.coverPath = await this.saveCoverFile(enrichedBook);
 				}
 
-				const markdownContent = MarkdownGenerator.generateMarkdown(
-					enrichedBook,
-					annotations,
-					this.settings
-				);
-				const fileName = MarkdownGenerator.generateFileName(enrichedBook);
-				await this.createBookNote(fileName, markdownContent);
-
-				if (enrichedBook.author && this.settings.createAuthorPages) {
-					await this.createAuthorPageIfNeeded(enrichedBook.author);
-				}
+				await this.importBook(enrichedBook, annotations);
 
 				importedCount++;
 				if (importedCount % 5 === 0 && importedCount < selectedBooks.length) {

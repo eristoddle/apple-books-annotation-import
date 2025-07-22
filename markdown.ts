@@ -1,7 +1,7 @@
 // markdown.ts
 import { BookDetail, Annotation, AppleBooksImporterSettings } from './types';
 
-export class MarkdownGenerator {
+export class NoteRenderer {
 	static sanitizeFrontmatter(text: string): string {
 		if (!text) return '';
 
@@ -127,15 +127,17 @@ export class MarkdownGenerator {
 		return parts.join(', ') + '.';
 	}
 
-	static generateMarkdown(
+	static renderFull(
 		book: BookDetail,
-		annotations: Annotation[],
+		body: string,
+		hash: string,
 		settings: AppleBooksImporterSettings
 	): string {
 		let content = '';
 
 		// Generate frontmatter
 		content += '---\n';
+		content += `last-import-hash: ${hash}\n`;
 
 		// Basic metadata - include asset_id like Python version
 		if (book.assetId) {
@@ -207,6 +209,17 @@ export class MarkdownGenerator {
 		}
 
 		content += '---\n\n';
+		content += body;
+
+		return content;
+	}
+
+	static render(
+		book: BookDetail,
+		annotations: Annotation[],
+		settings: AppleBooksImporterSettings
+	): string {
+		let content = '';
 
 		// Title
 		content += `# ${book.title}`;
@@ -396,7 +409,7 @@ export class MarkdownGenerator {
 		return content;
 	}
 
-	static generateFileName(book: BookDetail): string {
+	static getFileName(book: BookDetail): string {
 		const title = book.title || 'Unknown Title';
 		const author = book.author || 'Unknown Author';
 
