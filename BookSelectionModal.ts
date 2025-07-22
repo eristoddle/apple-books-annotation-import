@@ -29,7 +29,6 @@ export class BookSelectionModal extends Modal {
       // Let's assume books are pre-processed to include annotationCount for now.
       const bookItem: BookSelectionItem = {
         ...book,
-        // @ts-ignore - If annotations is not on BookDetail, this will error. Actual annotationCount is passed by main.ts processing.
         annotationCount: (book as BookSelectionItem).annotationCount || 0,
         selected: true, // Select all by default
         // Ensure 'null' cover from BookDetail becomes 'undefined' for BookSelectionItem's 'coverImage'
