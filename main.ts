@@ -177,7 +177,7 @@ export default class AppleBooksImporterPlugin extends Plugin {
 					const fileName = MarkdownGenerator.generateFileName(book);
 
 					// Create the file
-					await this.createBookNote(fileName, markdownContent);
+					await this.createBookNote(fileName, markdownContent, newHash);
 
 					// Create author page if needed
 					if (enrichedBook.author && this.settings.createAuthorPages) {
@@ -207,13 +207,11 @@ export default class AppleBooksImporterPlugin extends Plugin {
 		}
 	}
 
-	async createBookNote(fileName: string, content: string): Promise<void> {
+	async createBookNote(fileName: string, content: string, newHash: string): Promise<void> {
 		try {
-			// Determine the full path
 			const outputFolder = this.settings.outputFolder.trim();
 			const fullPath = outputFolder ? `${outputFolder}/${fileName}` : fileName;
 
-			// Check if folder exists and create if needed
 			if (outputFolder) {
 				const folderExists = await this.app.vault.adapter.exists(outputFolder);
 				if (!folderExists) {
@@ -235,8 +233,8 @@ export default class AppleBooksImporterPlugin extends Plugin {
 					const existingHash = frontmatter?.['last-import-hash'];
 
 					if (existingHash) {
-						const contentWithoutFrontmatter = existingContent.split('---').slice(2).join('---').trim();
-						const currentHash = CryptoUtils.generateSha256(contentWithoutFrontmatter);
+						const existingBody = existingContent.split('---').slice(2).join('---').trim();
+						const currentHash = CryptoUtils.generateSha256(existingBody);
 
 						if (existingHash !== currentHash) {
 							console.log(`Skipping modified file: ${fullPath}`);
@@ -250,7 +248,6 @@ export default class AppleBooksImporterPlugin extends Plugin {
 			} else {
 				await this.app.vault.create(fullPath, content);
 			}
-
 		} catch (error: any) {
 			throw new Error(`Failed to create note ${fileName}: ${error?.message || 'Unknown error'}`);
 		}
@@ -469,9 +466,8 @@ SORT publication_date DESC
 				);
 
 				const markdownContent = frontmatter + markdownBody;
-
 				const fileName = MarkdownGenerator.generateFileName(enrichedBook);
-				await this.createBookNote(fileName, markdownContent);
+				await this.createBookNote(fileName, markdownContent, newHash);
 
 				if (enrichedBook.author && this.settings.createAuthorPages) {
 					await this.createAuthorPageIfNeeded(enrichedBook.author);
