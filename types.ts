@@ -53,7 +53,7 @@ export interface AppleBooksImporterSettings {
 	includeCovers: boolean;
 	includeExtendedFrontmatter: boolean;
 	includeExtendedInNote: boolean;
-	overwriteExisting: boolean;
+	overwriteExisting: 'smart' | 'always' | 'never';
 	addTags: boolean;
 	customTags: string;
 	includeChapterInfo: boolean;
