@@ -1,6 +1,6 @@
 // main.ts
 import { Notice, Plugin, TFile, normalizePath } from 'obsidian';
-import * as fm from 'front-matter';
+import fm from 'front-matter';
 import { AppleBooksImporterSettings, BookDetail, Annotation } from './types';
 import { BookSelectionModal, BookSelectionItem } from './BookSelectionModal'; // Import the modal and item type
 import { AppleBooksImporterSettingTab, DEFAULT_SETTINGS } from './settings';
@@ -210,7 +210,7 @@ export default class AppleBooksImporterPlugin extends Plugin {
 				if (this.settings.overwriteExisting === 'smart') {
 					const existingContent = await this.app.vault.adapter.read(fullPath);
 					const frontmatter = fm(existingContent);
-					const lastImportHash = frontmatter?.attributes?.['last-import-hash'];
+					const lastImportHash = (frontmatter?.attributes as Record<string, any>)?.['last-import-hash'];
 
 					if (lastImportHash && lastImportHash === newContentHash) {
 						console.log(`No changes detected for ${fullPath}. Skipping.`);
