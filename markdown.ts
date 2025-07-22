@@ -50,7 +50,7 @@ export class MarkdownGenerator {
 				}
 			}
 
-			if (chapterId.toLowerCase().startsWith('c') && 
+			if (chapterId.toLowerCase().startsWith('c') &&
 				/^c\d+/.test(chapterId.toLowerCase())) {
 				// Handle 'c3.xhtml' -> 'Chapter 3'
 				const chapterMatch = chapterId.match(/^c(\d+)/i);
@@ -59,12 +59,12 @@ export class MarkdownGenerator {
 				}
 			}
 
-			if (chapterId.toLowerCase().includes('preface') || 
+			if (chapterId.toLowerCase().includes('preface') ||
 				chapterId.toLowerCase().includes('foreword')) {
 				return 'Preface';
 			}
 
-			if (chapterId.toLowerCase().includes('introduction') || 
+			if (chapterId.toLowerCase().includes('introduction') ||
 				chapterId.toLowerCase().includes('intro')) {
 				return 'Introduction';
 			}
@@ -114,8 +114,8 @@ export class MarkdownGenerator {
 		}
 
 		if (book.publicationDate) {
-			const year = book.publicationDate.length >= 4 
-				? book.publicationDate.substring(0, 4) 
+			const year = book.publicationDate.length >= 4
+				? book.publicationDate.substring(0, 4)
 				: book.publicationDate;
 			parts.push(year);
 		}
@@ -128,15 +128,15 @@ export class MarkdownGenerator {
 	}
 
 	static generateMarkdown(
-		book: BookDetail, 
-		annotations: Annotation[], 
+		book: BookDetail,
+		annotations: Annotation[],
 		settings: AppleBooksImporterSettings
 	): string {
 		let content = '';
 
 		// Generate frontmatter
 		content += '---\n';
-		
+
 		// Basic metadata - include asset_id like Python version
 		if (book.assetId) {
 			content += `asset_id: ${book.assetId}\n`;
@@ -217,24 +217,23 @@ export class MarkdownGenerator {
 
 		// Cover image if available and enabled
 		if (settings.includeCovers && book.cover) {
-			content += '<p align="center">';
 			if (settings.saveCoverToAttachmentFolder && book.coverPath) {
-				content += `![Cover|50%](${book.coverPath.replace(/ /g, '%20')})`;
+				content += `![Cover|center|50%](${book.coverPath.replace(/ /g, '%20')})`;
 			} else {
-				content += `<img src="data:image/jpeg;base64,${book.cover}" width="50%">`;
+				content += `<p align="center"><img src="data:image/jpeg;base64,${book.cover}" width="50%"></p>`;
 			}
-			content += '</p>\n\n';
+			content += '\n\n';
 		}
 
 		// Check if we should include metadata section in note body
-		const shouldIncludeMetadataSection = settings.includeExtendedInNote || 
+		const shouldIncludeMetadataSection = settings.includeExtendedInNote ||
 			(book.author && settings.createAuthorPages) ||
 			(settings.addTags && settings.customTags);
 
 		if (shouldIncludeMetadataSection) {
 			// Metadata section - only if we have content to show
 			content += '## Metadata\n\n';
-			
+
 			// Always include core fields if we're showing metadata section
 			if (book.assetId && settings.includeExtendedInNote) {
 				content += `- **Asset ID:** ${book.assetId}\n`;
@@ -250,7 +249,7 @@ export class MarkdownGenerator {
 					content += `- **Author:** ${book.author}\n`;
 				}
 			}
-			
+
 			// Extended metadata in note body only if enabled
 			if (settings.includeExtendedInNote) {
 				if (book.description) {
@@ -314,25 +313,25 @@ export class MarkdownGenerator {
 
 		// Process annotations
 		let currentChapter: string | null = null;
-		
+
 		// Filter annotations one more time to ensure no empty ones slip through
 		const validAnnotations = annotations.filter(annotation => {
 			const trimmedText = annotation.selectedText.trim();
 			return trimmedText.length > 0;
 		});
-		
+
 		if (validAnnotations.length === 0) {
 			content += 'No annotations found for this book.\n\n';
 			return content;
 		}
-		
+
 		for (const annotation of validAnnotations) {
 			// Skip if somehow we still have empty text
 			const trimmedText = annotation.selectedText.trim();
 			if (trimmedText.length === 0) {
 				continue;
 			}
-			
+
 			// Add chapter heading if enabled and we have a new chapter
 			if (settings.includeChapterInfo && annotation.location) {
 				const chapter = this.extractChapterFromCFI(annotation.location);
@@ -364,7 +363,7 @@ export class MarkdownGenerator {
 			// Add the highlight as a blockquote with style indicator
 			// DON'T trim individual lines - preserve original formatting including indentation
 			const highlightLines = trimmedText.split('\n');
-			
+
 			for (let i = 0; i < highlightLines.length; i++) {
 				const line = highlightLines[i];
 				if (i === 0) {
@@ -400,7 +399,7 @@ export class MarkdownGenerator {
 	static generateFileName(book: BookDetail): string {
 		const title = book.title || 'Unknown Title';
 		const author = book.author || 'Unknown Author';
-		
+
 		// Sanitize filename
 		const sanitize = (str: string) => {
 			return str.replace(/[<>:"/\\|?*]/g, '-').replace(/\s+/g, ' ').trim();
