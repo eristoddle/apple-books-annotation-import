@@ -5,6 +5,7 @@ import * as os from 'os';
 import * as glob from 'glob';
 import { exec } from 'child_process';
 import { promisify } from 'util';
+import { App, TFolder, normalizePath } from 'obsidian';
 import { BookDetail, Annotation } from './types';
 
 const execAsync = promisify(exec);
@@ -615,6 +616,7 @@ export class AppleBooksDatabase {
 			// These will be populated from EPUB metadata
 			rights: null,
 			subjects: null,
+			coverPath: null,
 		}));
 	}
 
@@ -800,5 +802,16 @@ export class AppleBooksDatabase {
 		} catch (error) {
 			return [0];
 		}
+	}
+
+	static async getAttachmentFolderPath(app: App): Promise<string> {
+		const attachmentPath = (app.vault as any).getConfig('attachmentFolderPath');
+		let attachmentFolder = app.vault.getAbstractFileByPath(attachmentPath);
+
+		if (!attachmentFolder || !(attachmentFolder instanceof TFolder)) {
+			attachmentFolder = app.vault.getRoot();
+		}
+
+		return attachmentFolder.path;
 	}
 }

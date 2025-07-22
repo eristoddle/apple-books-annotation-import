@@ -218,7 +218,11 @@ export class MarkdownGenerator {
 		// Cover image if available and enabled
 		if (settings.includeCovers && book.cover) {
 			content += '<p align="center">';
-			content += `<img src="data:image/jpeg;base64,${book.cover}" width="50%">`;
+			if (settings.saveCoverToAttachmentFolder && book.coverPath) {
+				content += `![Cover|50%](${book.coverPath.replace(/ /g, '%20')})`;
+			} else {
+				content += `<img src="data:image/jpeg;base64,${book.cover}" width="50%">`;
+			}
 			content += '</p>\n\n';
 		}
 
