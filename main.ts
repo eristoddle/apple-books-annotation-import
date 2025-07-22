@@ -164,6 +164,41 @@ export default class AppleBooksImporterPlugin extends Plugin {
 					);
 
 					const newHash = CryptoUtils.generateSha256(markdownBody);
+					const fileName = MarkdownGenerator.generateFileName(book);
+					const outputFolder = this.settings.outputFolder.trim();
+					const fullPath = outputFolder ? `${outputFolder}/${fileName}` : fileName;
+					const fileExists = await this.app.vault.adapter.exists(fullPath);
+
+					if (fileExists) {
+						if (this.settings.overwriteExisting === 'false') {
+							console.log(`Skipping existing file (overwrite disabled): ${fullPath}`);
+							skippedCount++;
+							continue;
+						}
+
+						if (this.settings.overwriteExisting === 'smart') {
+							const frontmatter = this.app.metadataCache.getCache(fullPath)?.frontmatter;
+							const lastImportHash = frontmatter?.['last-import-hash'];
+
+							if (lastImportHash) {
+								if (newHash === lastImportHash) {
+									console.log(`No changes for ${book.title}. Skipping.`);
+									skippedCount++;
+									continue;
+								}
+
+								const existingContent = await this.app.vault.adapter.read(fullPath);
+								const existingBody = existingContent.split('---').slice(2).join('---').trim().replace(/\r\n/g, '\n');
+								const currentFileHash = CryptoUtils.generateSha256(existingBody);
+
+								if (lastImportHash !== currentFileHash) {
+									console.log(`Skipping modified file: ${fullPath}`);
+									skippedCount++;
+									continue;
+								}
+							}
+						}
+					}
 
 					const frontmatter = MarkdownGenerator.generateFrontmatter(
 						enrichedBook,
@@ -172,12 +207,7 @@ export default class AppleBooksImporterPlugin extends Plugin {
 					);
 
 					const markdownContent = frontmatter + markdownBody;
-
-					// Generate filename
-					const fileName = MarkdownGenerator.generateFileName(book);
-
-					// Create the file
-					await this.createBookNote(fileName, markdownContent, newHash);
+					await this.createBookNote(fileName, markdownContent);
 
 					// Create author page if needed
 					if (enrichedBook.author && this.settings.createAuthorPages) {
@@ -207,7 +237,7 @@ export default class AppleBooksImporterPlugin extends Plugin {
 		}
 	}
 
-	async createBookNote(fileName: string, content: string, newHash: string): Promise<void> {
+	async createBookNote(fileName: string, content: string): Promise<void> {
 		try {
 			const outputFolder = this.settings.outputFolder.trim();
 			const fullPath = outputFolder ? `${outputFolder}/${fileName}` : fileName;
@@ -222,27 +252,6 @@ export default class AppleBooksImporterPlugin extends Plugin {
 			const fileExists = await this.app.vault.adapter.exists(fullPath);
 
 			if (fileExists) {
-				if (this.settings.overwriteExisting === 'false') {
-					console.log(`Skipping existing file (overwrite disabled): ${fullPath}`);
-					return;
-				}
-
-				if (this.settings.overwriteExisting === 'smart') {
-					const existingContent = await this.app.vault.adapter.read(fullPath);
-					const frontmatter = this.app.metadataCache.getCache(fullPath)?.frontmatter;
-					const existingHash = frontmatter?.['last-import-hash'];
-
-					if (existingHash) {
-						const existingBody = existingContent.split('---').slice(2).join('---').trim();
-						const currentHash = CryptoUtils.generateSha256(existingBody);
-
-						if (existingHash !== currentHash) {
-							console.log(`Skipping modified file: ${fullPath}`);
-							return;
-						}
-					}
-				}
-
 				const file = this.app.vault.getAbstractFileByPath(fullPath) as TFile;
 				await this.app.vault.modify(file, content);
 			} else {
@@ -458,6 +467,41 @@ SORT publication_date DESC
 				);
 
 				const newHash = CryptoUtils.generateSha256(markdownBody);
+				const fileName = MarkdownGenerator.generateFileName(enrichedBook);
+				const outputFolder = this.settings.outputFolder.trim();
+				const fullPath = outputFolder ? `${outputFolder}/${fileName}` : fileName;
+				const fileExists = await this.app.vault.adapter.exists(fullPath);
+
+				if (fileExists) {
+					if (this.settings.overwriteExisting === 'false') {
+						console.log(`Skipping existing file (overwrite disabled): ${fullPath}`);
+						skippedCount++;
+						continue;
+					}
+
+					if (this.settings.overwriteExisting === 'smart') {
+						const frontmatter = this.app.metadataCache.getCache(fullPath)?.frontmatter;
+						const lastImportHash = frontmatter?.['last-import-hash'];
+
+						if (lastImportHash) {
+							if (newHash === lastImportHash) {
+								console.log(`No changes for ${book.title}. Skipping.`);
+								skippedCount++;
+								continue;
+							}
+
+							const existingContent = await this.app.vault.adapter.read(fullPath);
+							const existingBody = existingContent.split('---').slice(2).join('---').trim().replace(/\r\n/g, '\n');
+							const currentFileHash = CryptoUtils.generateSha256(existingBody);
+
+							if (lastImportHash !== currentFileHash) {
+								console.log(`Skipping modified file: ${fullPath}`);
+								skippedCount++;
+								continue;
+							}
+						}
+					}
+				}
 
 				const frontmatter = MarkdownGenerator.generateFrontmatter(
 					enrichedBook,
@@ -466,8 +510,7 @@ SORT publication_date DESC
 				);
 
 				const markdownContent = frontmatter + markdownBody;
-				const fileName = MarkdownGenerator.generateFileName(enrichedBook);
-				await this.createBookNote(fileName, markdownContent, newHash);
+				await this.createBookNote(fileName, markdownContent);
 
 				if (enrichedBook.author && this.settings.createAuthorPages) {
 					await this.createAuthorPageIfNeeded(enrichedBook.author);
