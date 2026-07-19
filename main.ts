@@ -1,4 +1,6 @@
 // main.ts
+import * as fs from 'fs';
+import * as path from 'path';
 import { Notice, Plugin, TFile, normalizePath } from 'obsidian';
 import fm from 'front-matter';
 import { AppleBooksImporterSettings, BookDetail, Annotation } from './types';
@@ -7,6 +9,13 @@ import { AppleBooksImporterSettingTab, DEFAULT_SETTINGS } from './settings';
 import { AppleBooksDatabase } from './database';
 import { NoteRenderer } from './markdown';
 import { CryptoUtils } from './crypto';
+import {
+	getAppleBooksPdfDir,
+	pdfLikelyHasHighlights,
+	extractPdfHighlights,
+	pdfHighlightToAnnotation,
+	buildPdfBookDetail,
+} from './pdfParser';
 
 export default class AppleBooksImporterPlugin extends Plugin {
 	settings: AppleBooksImporterSettings;
@@ -67,12 +76,13 @@ export default class AppleBooksImporterPlugin extends Plugin {
 			const booksWithHighlights = await AppleBooksDatabase.getBooksWithHighlights();
 			console.log('Books with highlights:', booksWithHighlights);
 			
+			// EPUB highlights are stored in the annotation database. (PDF highlights are
+			// handled separately below, so we don't return early when this is empty.)
 			if (booksWithHighlights.length === 0) {
-				new Notice('No books with highlights found in Apple Books', 4000);
-				return;
+				new Notice('No EPUB books with highlights found in Apple Books', 3000);
+			} else {
+				new Notice(`Found ${booksWithHighlights.length} books with highlights`, 3000);
 			}
-
-			new Notice(`Found ${booksWithHighlights.length} books with highlights`, 3000);
 
 			// Get book details
 			const allBooks = await AppleBooksDatabase.getBookDetails();
@@ -170,6 +180,14 @@ export default class AppleBooksImporterPlugin extends Plugin {
 				}
 			}
 
+			// Import PDF highlights. Apple Books stores these inside the PDF files
+			// themselves (not the annotation database), so this scans the iCloud Books folder.
+			if (this.settings.includePdfHighlights) {
+				const pdfResult = await this.importPdfBooks();
+				importedCount += pdfResult.imported;
+				skippedCount += pdfResult.skipped;
+			}
+
 			// Show final result
 			const message = `✅ Import complete! ${importedCount} books imported${skippedCount > 0 ? `, ${skippedCount} skipped` : ''}`;
 			new Notice(message, 5000);
@@ -178,6 +196,77 @@ export default class AppleBooksImporterPlugin extends Plugin {
 			console.error('Error during import:', error);
 			new Notice(`❌ Import failed: ${error?.message || 'Unknown error'}`, 5000);
 		}
+	}
+
+	// Import highlights from PDF books in the Apple Books iCloud folder. Returns the
+	// number of PDFs imported and skipped so the caller can fold them into the totals.
+	async importPdfBooks(): Promise<{ imported: number; skipped: number }> {
+		let imported = 0;
+		let skipped = 0;
+
+		const pdfDir = getAppleBooksPdfDir();
+		if (!fs.existsSync(pdfDir)) {
+			console.log(`Apple Books PDF folder not found: ${pdfDir}`);
+			return { imported, skipped };
+		}
+
+		// Pull library metadata (title/author) for PDFs so notes get proper titles.
+		let pdfBooksByPath = new Map<string, BookDetail>();
+		try {
+			const pdfBooks = await AppleBooksDatabase.getPdfBookDetails();
+			for (const book of pdfBooks) {
+				if (book.path) pdfBooksByPath.set(book.path, book);
+			}
+		} catch (error) {
+			console.warn('Could not load PDF library metadata, falling back to file names:', error);
+		}
+
+		let files: string[] = [];
+		try {
+			files = fs.readdirSync(pdfDir).filter(f => f.toLowerCase().endsWith('.pdf'));
+		} catch (error) {
+			console.error('Could not read Apple Books PDF folder:', error);
+			return { imported, skipped };
+		}
+
+		// Cheap binary pre-filter first so we only parse PDFs that actually have highlights.
+		if (files.length > 0) {
+			new Notice(`Checking ${files.length} PDF(s) for highlights...`, 3000);
+		}
+		const candidates = files
+			.map(f => path.join(pdfDir, f))
+			.filter(fullPath => pdfLikelyHasHighlights(fullPath));
+
+		if (candidates.length === 0) {
+			console.log('No PDFs with highlights found.');
+			return { imported, skipped };
+		}
+
+		new Notice(`Scanning ${candidates.length} PDF(s) with highlights...`, 3000);
+
+		for (const fullPath of candidates) {
+			try {
+				const highlights = await extractPdfHighlights(fullPath);
+				if (highlights.length === 0) {
+					continue;
+				}
+
+				const book = buildPdfBookDetail(fullPath, pdfBooksByPath.get(fullPath));
+				const annotations = highlights.map(pdfHighlightToAnnotation);
+
+				await this.importBook(book, annotations);
+				imported++;
+
+				if (imported % 5 === 0) {
+					new Notice(`Imported ${imported} PDF(s)...`, 2000);
+				}
+			} catch (error) {
+				console.error(`Error importing PDF ${fullPath}:`, error);
+				skipped++;
+			}
+		}
+
+		return { imported, skipped };
 	}
 
 	async importBook(book: BookDetail, annotations: Annotation[]): Promise<void> {

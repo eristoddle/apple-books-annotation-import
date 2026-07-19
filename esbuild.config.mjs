@@ -31,6 +31,9 @@ const context = await esbuild.context({
 		"@lezer/common",
 		"@lezer/highlight",
 		"@lezer/lr",
+		// pdf.js only require()s "canvas" on its Node code path, which Obsidian's
+		// renderer never hits; keep the native module out of the bundle.
+		"canvas",
 		...builtins],
 	format: "cjs",
 	target: "es2018",

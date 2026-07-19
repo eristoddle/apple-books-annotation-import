@@ -19,6 +19,7 @@ export const DEFAULT_SETTINGS: AppleBooksImporterSettings = {
 	includeReadingProgress: true,
 	createAuthorPages: true,
 	includeCitations: false,
+	includePdfHighlights: true,
 };
 
 export class AppleBooksImporterSettingTab extends PluginSettingTab {
@@ -222,6 +223,19 @@ export class AppleBooksImporterSettingTab extends PluginSettingTab {
 					.setValue(this.plugin.settings.createAuthorPages)
 					.onChange(async (value) => {
 						this.plugin.settings.createAuthorPages = value;
+						await this.plugin.saveSettings();
+					})
+			);
+
+		// Include PDF highlights
+		new Setting(containerEl)
+			.setName("Import PDF highlights")
+			.setDesc("Also import highlights from PDF books. Apple Books stores these inside the PDF files rather than its database, so importing scans your iCloud Books folder (may add time to the import).")
+			.addToggle((toggle) =>
+				toggle
+					.setValue(this.plugin.settings.includePdfHighlights)
+					.onChange(async (value) => {
+						this.plugin.settings.includePdfHighlights = value;
 						await this.plugin.saveSettings();
 					})
 			);

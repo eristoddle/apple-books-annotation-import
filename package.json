@@ -36,7 +36,8 @@
 	},
 	"dependencies": {
 		"front-matter": "^4.0.2",
-		"glob": "^8.0.3"
+		"glob": "^8.0.3",
+		"pdfjs-dist": "^3.11.174"
 	},
 	"engines": {
 		"npm": "10.8.1",

@@ -556,6 +556,40 @@ export class AppleBooksDatabase {
 		}
 	}
 
+	// PDF highlights are not stored in the annotation DB, so PDFs never surface through
+	// getBooksWithHighlights(). This returns library metadata (title/author/path) for every
+	// PDF asset (ZCONTENTTYPE=3) so the PDF import path can attach proper titles/authors.
+	static async getPdfBookDetails(): Promise<BookDetail[]> {
+		try {
+			const dbPath = this.getDbPath(LIBRARY_DB_PATTERN);
+			const availableColumns = await this.getAvailableColumns(dbPath, 'ZBKLIBRARYASSET');
+
+			const basicColumns = ['ZASSETID', 'ZSORTTITLE', 'ZSORTAUTHOR', 'ZBOOKDESCRIPTION', 'ZEPUBID', 'ZPATH'];
+			const extendedColumns = [
+				'ZGENRE', 'ZGENRES', 'ZYEAR', 'ZPAGECOUNT', 'ZRATING', 'ZCOMMENTS',
+				'ZLANGUAGE', 'ZREADINGPROGRESS', 'ZCREATIONDATE', 'ZLASTOPENDATE', 'ZMODIFICATIONDATE'
+			];
+
+			const allColumns = [
+				...basicColumns.filter(col => availableColumns.includes(col)),
+				...extendedColumns.filter(col => availableColumns.includes(col)),
+			];
+
+			if (!allColumns.includes('ZASSETID')) {
+				throw new Error('Database schema incompatible: missing required ZASSETID column');
+			}
+
+			// ZCONTENTTYPE = 3 identifies PDF assets (1 = EPUB).
+			const query = `SELECT ${allColumns.join(', ')} FROM ZBKLIBRARYASSET WHERE ZCONTENTTYPE = 3;`;
+			const results = await this.executeSqlQueryWithHeaders(dbPath, query, { maxBuffer: 50 * 1024 * 1024 });
+			console.log('PDF library rows found:', results.length);
+			return this.mapBookResults(results);
+		} catch (error: any) {
+			console.error('Error in getPdfBookDetails:', error);
+			throw new Error(`Failed to get PDF book details: ${error?.message || 'Unknown error'}`);
+		}
+	}
+
 	private static async getBookDetailsChunked(dbPath: string, columns: string[]): Promise<BookDetail[]> {
 		try {
 			// First get count to determine chunk size

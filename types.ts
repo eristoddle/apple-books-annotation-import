@@ -64,4 +64,5 @@ export interface AppleBooksImporterSettings {
 	createAuthorPages: boolean;
 	includeCitations: boolean;
 	saveCoverToAttachmentFolder: boolean;
+	includePdfHighlights: boolean;
 }
