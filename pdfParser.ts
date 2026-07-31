@@ -7,15 +7,44 @@
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import * as pdfjsLib from 'pdfjs-dist/legacy/build/pdf.js';
-import * as pdfjsWorker from 'pdfjs-dist/legacy/build/pdf.worker.js';
 import { BookDetail, Annotation } from './types';
 
-// Run pdf.js on the main thread. In Obsidian's Electron renderer pdf.js treats the
-// environment as a browser and would otherwise try to spawn a real Web Worker from a
-// separate file URL, which the single-file plugin bundle does not have. Exposing the
-// worker module as `globalThis.pdfjsWorker` makes pdf.js use it in-process instead.
-(globalThis as any).pdfjsWorker = pdfjsWorker;
+// pdf.js must not leak into the global scope. Its UMD wrapper assigns itself to
+// `globalThis.pdfjsLib` / `globalThis.pdfjsWorker` merely on being loaded, and Obsidian's
+// built-in PDF viewer ships its own (much newer) pdf.js that checks `globalThis.pdfjsWorker`
+// first: if it finds one it skips starting its own worker and runs against ours, which dies
+// with "The API version ... does not match the Worker version ..." and breaks PDF viewing
+// vault-wide. So we load pdf.js lazily, restore the globals to exactly what they were, and
+// drive our own copy through a private MessageChannel rather than the global.
+type PdfjsModules = { lib: any; worker: any };
+let pdfjsModules: PdfjsModules | null = null;
+
+function loadPdfjs(): PdfjsModules {
+	if (pdfjsModules) return pdfjsModules;
+	const g = globalThis as any;
+	const hadLib = 'pdfjsLib' in g, prevLib = g.pdfjsLib;
+	const hadWorker = 'pdfjsWorker' in g, prevWorker = g.pdfjsWorker;
+	try {
+		pdfjsModules = {
+			lib: require('pdfjs-dist/legacy/build/pdf.js'),
+			worker: require('pdfjs-dist/legacy/build/pdf.worker.js'),
+		};
+	} finally {
+		if (hadLib) g.pdfjsLib = prevLib; else delete g.pdfjsLib;
+		if (hadWorker) g.pdfjsWorker = prevWorker; else delete g.pdfjsWorker;
+	}
+	return pdfjsModules;
+}
+
+// Run pdf.js on the main thread without a separate worker file (the single-file plugin
+// bundle has none). Wiring the worker's message handler to one end of a MessageChannel and
+// a PDFWorker to the other gets the same in-process behaviour as pdf.js's own fake-worker
+// path, but scoped to this document instead of a global handoff.
+function createPdfWorker(mods: PdfjsModules): any {
+	const channel = new MessageChannel();
+	mods.worker.WorkerMessageHandler.initializeFromPort(channel.port2);
+	return new mods.lib.PDFWorker({ port: channel.port1, verbosity: 0 });
+}
 
 export interface PdfHighlight {
 	page: number;
@@ -164,7 +193,9 @@ function extractTextFromQuads(items: any[], quadPoints: { x: number; y: number }
 // vertical position (top to bottom) within each page.
 export async function extractPdfHighlights(pdfPath: string): Promise<PdfHighlight[]> {
 	const data = new Uint8Array(fs.readFileSync(pdfPath));
-	const doc = await pdfjsLib.getDocument({ data, isEvalSupported: false, verbosity: 0 }).promise;
+	const mods = loadPdfjs();
+	const worker = createPdfWorker(mods);
+	const doc = await mods.lib.getDocument({ data, worker, isEvalSupported: false, verbosity: 0 }).promise;
 	const highlights: PdfHighlight[] = [];
 
 	try {
@@ -195,6 +226,7 @@ export async function extractPdfHighlights(pdfPath: string): Promise<PdfHighligh
 		}
 	} finally {
 		await doc.destroy();
+		worker.destroy();
 	}
 
 	return highlights;
