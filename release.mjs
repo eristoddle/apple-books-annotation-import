@@ -11,6 +11,18 @@ if (!['patch', 'minor', 'major'].includes(releaseType)) {
 	process.exit(1);
 }
 
+// Build the release page URL from the `origin` remote, handling both the HTTPS and the
+// SSH remote forms. Returns null if origin is missing or is not a GitHub remote.
+function getReleaseUrl(tagName) {
+	try {
+		const origin = execSync('git remote get-url origin', { encoding: 'utf8' }).trim();
+		const match = origin.match(/github\.com[:/](.+?)(?:\.git)?$/);
+		return match ? `https://github.com/${match[1]}/releases/tag/${tagName}` : null;
+	} catch {
+		return null;
+	}
+}
+
 console.log(`🚀 Starting ${releaseType} release process...`);
 
 try {
@@ -67,7 +79,8 @@ try {
 	console.log('✅ Release created successfully!');
 	console.log(`🎉 Version ${version} has been tagged and pushed.`);
 	console.log('📋 GitHub Actions will now build and create the release automatically.');
-	console.log(`🔗 Check the release at: https://github.com/your-username/your-repo/releases/tag/${tagName}`);
+	const releaseUrl = getReleaseUrl(tagName);
+	if (releaseUrl) console.log(`🔗 Check the release at: ${releaseUrl}`);
 
 } catch (error) {
 	console.error('❌ Release failed:', error.message);
