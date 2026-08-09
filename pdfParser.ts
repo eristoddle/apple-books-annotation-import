@@ -262,9 +262,9 @@ export function pdfHighlightToAnnotation(h: PdfHighlight): Annotation {
 // title/author) and falling back to the file name.
 export function buildPdfBookDetail(filePath: string, dbBook?: BookDetail | null): BookDetail {
 	const base = path.basename(filePath, path.extname(filePath));
-	const rawAuthor = dbBook?.author?.trim() || null;
-	// Apple Books uses "Unknown"/"UnknownAuthor" sentinels; treat those as no author.
-	const author = rawAuthor && !/^unknown/i.test(rawAuthor) ? rawAuthor : null;
+	// The author is already normalized when the library row is built, so Apple's
+	// "no author" sentinels arrive here as null and need no second pass.
+	const author = dbBook?.author || null;
 
 	if (dbBook) {
 		return { ...dbBook, title: dbBook.title || base, author, path: filePath };

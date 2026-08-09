@@ -10,6 +10,23 @@ import { BookDetail, Annotation } from './types';
 
 const execAsync = promisify(exec);
 
+// Apple Books represents "this book has no author" as the literal string
+// "\ue83aUnknownAuthor" -- an invisible private-use character (U+E83A, its sort-order
+// marker) glued to a sentinel word. Left alone it ends up inside note filenames and
+// [[Authors/...]] wikilinks, and it defeats any plain /^unknown/ test. Older library rows
+// use the bare "Unknown"/"UnknownAuthor" spellings for the same thing. Normalize the whole
+// family to null here, at the one place book rows are built, so every caller sees a real
+// author or nothing.
+const AUTHOR_SENTINELS = /^(unknown|unknownauthor|unknown author)$/i;
+
+function normalizeAuthor(raw: unknown): string | null {
+	if (typeof raw !== 'string') return null;
+	// Strip Unicode private-use characters; they are Apple metadata, never part of a name.
+	const cleaned = raw.replace(/[\uE000-\uF8FF]/g, '').trim();
+	if (!cleaned || AUTHOR_SENTINELS.test(cleaned)) return null;
+	return cleaned;
+}
+
 const ANNOTATION_DB_PATTERN = path.join(
 	os.homedir(),
 	'Library/Containers/com.apple.iBooksX/Data/Documents/AEAnnotation/AEAnnotation*.sqlite'
@@ -627,7 +644,7 @@ export class AppleBooksDatabase {
 		return results.map((row: any) => ({
 			assetId: row.ZASSETID,
 			title: row.ZSORTTITLE || 'Unknown Title',
-			author: row.ZSORTAUTHOR || null,
+			author: normalizeAuthor(row.ZSORTAUTHOR),
 			description: row.ZBOOKDESCRIPTION || null,
 			epubId: row.ZEPUBID || null,
 			path: row.ZPATH || null,
