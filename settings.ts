@@ -20,6 +20,7 @@ export const DEFAULT_SETTINGS: AppleBooksImporterSettings = {
 	createAuthorPages: true,
 	includeCitations: false,
 	includePdfHighlights: true,
+	pdfScanCache: {},
 };
 
 export class AppleBooksImporterSettingTab extends PluginSettingTab {

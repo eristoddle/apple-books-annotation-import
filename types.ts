@@ -65,4 +65,16 @@ export interface AppleBooksImporterSettings {
 	includeCitations: boolean;
 	saveCoverToAttachmentFolder: boolean;
 	includePdfHighlights: boolean;
+	// Remembers, per PDF, whether it contained highlights the last time we looked. Not a
+	// user setting; it rides along in the plugin's data file. See PdfScanCacheEntry.
+	pdfScanCache: Record<string, PdfScanCacheEntry>;
+}
+
+// One cached answer to "does this PDF contain highlights?", keyed by file name. A PDF
+// cannot gain a highlight without being rewritten, so an unchanged mtime and size mean
+// the previous answer still holds and the file does not need to be read again.
+export interface PdfScanCacheEntry {
+	mtimeMs: number;
+	size: number;
+	hasHighlights: boolean;
 }

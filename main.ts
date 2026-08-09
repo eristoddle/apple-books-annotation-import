@@ -15,6 +15,7 @@ import {
 	extractPdfHighlights,
 	pdfHighlightToAnnotation,
 	buildPdfBookDetail,
+	prunePdfScanCache,
 } from './pdfParser';
 
 // Upper bound on how long a single PDF may take to parse. Large PDFs legitimately take
@@ -242,12 +243,25 @@ export default class AppleBooksImporterPlugin extends Plugin {
 		}
 
 		// Cheap binary pre-filter first so we only parse PDFs that actually have highlights.
-		if (files.length > 0) {
-			new Notice(`Checking ${files.length} PDF(s) for highlights...`, 3000);
+		// The cache makes this a stat() per file for everything unchanged since last time;
+		// only new or re-annotated PDFs are actually read.
+		const fullPaths = files.map(f => path.join(pdfDir, f));
+		if (!this.settings.pdfScanCache) {
+			this.settings.pdfScanCache = {};
 		}
-		const candidates = files
-			.map(f => path.join(pdfDir, f))
-			.filter(fullPath => pdfLikelyHasHighlights(fullPath));
+		const scanCache = this.settings.pdfScanCache;
+		const unscanned = fullPaths.filter(p => !scanCache[path.basename(p)]).length;
+		if (files.length > 0) {
+			new Notice(
+				unscanned > 0
+					? `Checking ${unscanned} new or changed PDF(s) for highlights...`
+					: `Checking ${files.length} PDF(s) for highlights...`,
+				3000
+			);
+		}
+		const candidates = fullPaths.filter(fullPath => pdfLikelyHasHighlights(fullPath, scanCache));
+		prunePdfScanCache(scanCache, fullPaths);
+		await this.saveSettings();
 
 		if (candidates.length === 0) {
 			console.log('No PDFs with highlights found.');

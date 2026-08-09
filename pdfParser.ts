@@ -7,7 +7,7 @@
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { BookDetail, Annotation } from './types';
+import { BookDetail, Annotation, PdfScanCacheEntry } from './types';
 
 // pdf.js must not leak into the global scope. Its UMD wrapper assigns itself to
 // `globalThis.pdfjsLib` / `globalThis.pdfjsWorker` merely on being loaded, and Obsidian's
@@ -108,17 +108,93 @@ export function getAppleBooksPdfDir(): string {
 	);
 }
 
-// Cheap pre-filter so we don't hand hundreds of un-annotated PDFs to pdf.js. Apple Books
-// writes highlight annotations uncompressed, so the "/Highlight" name is present as
-// plain bytes in files that actually contain highlights. A false positive just triggers
-// a parse that finds nothing (harmless); this only needs to avoid false negatives.
-export function pdfLikelyHasHighlights(pdfPath: string): boolean {
+// Apple Books writes highlight annotations uncompressed, so the "/Highlight" name is
+// present as plain bytes in files that actually contain highlights. A false positive just
+// triggers a parse that finds nothing (harmless); this only needs to avoid false negatives.
+const HIGHLIGHT_MARKER = Buffer.from('/Highlight', 'latin1');
+const SCAN_CHUNK_BYTES = 1024 * 1024;
+
+// Search the file for the marker without ever holding more than one chunk in memory --
+// a library can contain individual PDFs of several hundred MB, and reading those whole
+// just to run a substring search is a large allocation inside Obsidian's renderer.
+//
+// Scanning runs backwards from the end of the file because Apple Books appends its
+// annotations as PDF incremental updates: in a real library every highlighted PDF matches
+// inside the first chunk read. Successive chunks overlap by marker.length - 1 bytes so a
+// match straddling a chunk boundary cannot be missed. A file with no highlights is still
+// read in full, which is why callers should pair this with the scan cache below.
+function fileContainsHighlightMarker(pdfPath: string): boolean {
+	const overlap = HIGHLIGHT_MARKER.length - 1;
+	let fd: number | null = null;
 	try {
-		const buf = fs.readFileSync(pdfPath);
-		return buf.includes(Buffer.from('/Highlight', 'latin1'));
+		fd = fs.openSync(pdfPath, 'r');
+		const size = fs.fstatSync(fd).size;
+		if (size === 0) return false;
+		const buf = Buffer.allocUnsafe(Math.min(SCAN_CHUNK_BYTES, size));
+		let end = size;
+		while (end > 0) {
+			const start = Math.max(0, end - SCAN_CHUNK_BYTES);
+			const bytesRead = fs.readSync(fd, buf, 0, end - start, start);
+			if (bytesRead <= 0) break;
+			if (buf.subarray(0, bytesRead).includes(HIGHLIGHT_MARKER)) return true;
+			if (start === 0) break;
+			end = start + overlap;
+		}
+		return false;
+	} catch {
+		return false;
+	} finally {
+		if (fd !== null) {
+			try { fs.closeSync(fd); } catch { /* already gone */ }
+		}
+	}
+}
+
+// Cheap pre-filter so we don't hand hundreds of un-annotated PDFs to pdf.js.
+//
+// Pass the persisted cache to skip files that have not changed since the last import.
+// Apple Books cannot add a highlight without rewriting the file, so a matching mtime and
+// size mean the previous answer is still correct. Without this every import re-reads the
+// entire PDF library from disk; with it, a steady-state run does one stat() per file.
+export function pdfLikelyHasHighlights(
+	pdfPath: string,
+	cache?: Record<string, PdfScanCacheEntry>
+): boolean {
+	let stats: fs.Stats;
+	try {
+		stats = fs.statSync(pdfPath);
 	} catch {
 		return false;
 	}
+
+	const key = path.basename(pdfPath);
+	const cached = cache?.[key];
+	if (cached && cached.mtimeMs === stats.mtimeMs && cached.size === stats.size) {
+		return cached.hasHighlights;
+	}
+
+	const hasHighlights = fileContainsHighlightMarker(pdfPath);
+	if (cache) {
+		cache[key] = { mtimeMs: stats.mtimeMs, size: stats.size, hasHighlights };
+	}
+	return hasHighlights;
+}
+
+// Drop cache entries for PDFs that are no longer in the library, so the plugin's data file
+// does not accumulate a row per book the user has ever owned. Returns the number removed.
+export function prunePdfScanCache(
+	cache: Record<string, PdfScanCacheEntry>,
+	presentPaths: string[]
+): number {
+	const present = new Set(presentPaths.map(p => path.basename(p)));
+	let removed = 0;
+	for (const key of Object.keys(cache)) {
+		if (!present.has(key)) {
+			delete cache[key];
+			removed++;
+		}
+	}
+	return removed;
 }
 
 interface QuadBox { xMin: number; xMax: number; yMin: number; yMax: number; }
