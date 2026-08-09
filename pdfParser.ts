@@ -43,7 +43,15 @@ function loadPdfjs(): PdfjsModules {
 function createPdfWorker(mods: PdfjsModules): any {
 	const channel = new MessageChannel();
 	mods.worker.WorkerMessageHandler.initializeFromPort(channel.port2);
-	return new mods.lib.PDFWorker({ port: channel.port1, verbosity: 0 });
+	const worker = new mods.lib.PDFWorker({ port: channel.port1, verbosity: 0 });
+	// Both ports must be started explicitly. pdf.js only ever calls addEventListener()
+	// on the port it is handed, and per the HTML spec that does NOT enable a
+	// MessagePort's message queue (only start() or assigning onmessage does). Without
+	// this, every message between the API and the worker sits queued forever and
+	// getDocument() never settles -- the import hangs silently on the first PDF.
+	channel.port1.start();
+	channel.port2.start();
+	return worker;
 }
 
 export interface PdfHighlight {

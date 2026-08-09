@@ -17,6 +17,18 @@ import {
 	buildPdfBookDetail,
 } from './pdfParser';
 
+// Upper bound on how long a single PDF may take to parse. Large PDFs legitimately take
+// tens of seconds, so this is generous; it exists only to turn a hang into a skip.
+const PDF_PARSE_TIMEOUT_MS = 5 * 60 * 1000;
+
+function withTimeout<T>(promise: Promise<T>, ms: number, message: string): Promise<T> {
+	let timer: ReturnType<typeof setTimeout>;
+	const timeout = new Promise<never>((_, reject) => {
+		timer = setTimeout(() => reject(new Error(message)), ms);
+	});
+	return Promise.race([promise, timeout]).finally(() => clearTimeout(timer)) as Promise<T>;
+}
+
 export default class AppleBooksImporterPlugin extends Plugin {
 	settings: AppleBooksImporterSettings;
 
@@ -246,7 +258,14 @@ export default class AppleBooksImporterPlugin extends Plugin {
 
 		for (const fullPath of candidates) {
 			try {
-				const highlights = await extractPdfHighlights(fullPath);
+				// Bound the parse. A PDF that never resolves would otherwise stall the whole
+				// PDF phase with no error and no completion notice, which is how a previous
+				// pdf.js wiring bug went unnoticed for weeks.
+				const highlights = await withTimeout(
+					extractPdfHighlights(fullPath),
+					PDF_PARSE_TIMEOUT_MS,
+					`Timed out parsing ${path.basename(fullPath)}`
+				);
 				if (highlights.length === 0) {
 					continue;
 				}
