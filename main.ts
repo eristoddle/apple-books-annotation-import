@@ -250,12 +250,24 @@ export default class AppleBooksImporterPlugin extends Plugin {
 			this.settings.pdfScanCache = {};
 		}
 		const scanCache = this.settings.pdfScanCache;
-		const unscanned = fullPaths.filter(p => !scanCache[path.basename(p)]).length;
+		// Count what will actually be read, which means new files *and* ones whose mtime or
+		// size moved since last time. Checking only for a missing cache entry would report
+		// re-annotated books as cached and claim there was nothing to do.
+		const needScan = fullPaths.filter(fullPath => {
+			const cached = scanCache[path.basename(fullPath)];
+			if (!cached) return true;
+			try {
+				const stats = fs.statSync(fullPath);
+				return cached.mtimeMs !== stats.mtimeMs || cached.size !== stats.size;
+			} catch {
+				return false;
+			}
+		}).length;
 		if (files.length > 0) {
 			new Notice(
-				unscanned > 0
-					? `Checking ${unscanned} new or changed PDF(s) for highlights...`
-					: `Checking ${files.length} PDF(s) for highlights...`,
+				needScan > 0
+					? `Checking ${needScan} new or changed PDF(s) for highlights...`
+					: `${files.length} PDF(s) unchanged since last import.`,
 				3000
 			);
 		}
